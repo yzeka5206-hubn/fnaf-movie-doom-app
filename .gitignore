@@ -1,0 +1,16 @@
+.gradle
+local.properties
+.idea
+.DS_Store
+build
+.cxx
+*.iml
+captures
+
+*.apk
+*.aab
+/blakestone
+/doom/build
+/doom/release
+/doom/.externalNativeBuild
+/doom/src/main/obj
