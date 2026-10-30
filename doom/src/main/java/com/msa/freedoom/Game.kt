@@ -1,6 +1,8 @@
 package com.msa.freedoom
 
 import android.content.res.Configuration
+import android.graphics.Rect
+import android.os.Build
 import android.os.Bundle
 import org.libsdl.app2012.SDLActivity
 
@@ -38,6 +40,18 @@ class Game : SDLActivity() {
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
         Utils.onWindowFocusChanged(this, hasFocus)
+        // Analog cubuk bolgelerini sistem hareketlerinden (geri/ana ekran
+        // kenar kaydirmalari) koru: cubugu suruklerken yanlislikla
+        // duraklatma menusu acilmasin.
+        if (hasFocus && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val dm = resources.displayMetrics
+            val w = dm.widthPixels
+            val h = dm.heightPixels
+            window.decorView.systemGestureExclusionRects = listOf(
+                Rect(0, h / 2, w / 3, h),
+                Rect(2 * w / 3, h / 2, w, h),
+            )
+        }
     }
 
     override fun onDestroy() {

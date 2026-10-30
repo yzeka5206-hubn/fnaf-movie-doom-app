@@ -50,6 +50,7 @@ public class SDLOpenTouch
     public static boolean invertMouseY = false;
 
     static NativeLib engine;
+    static long lastBackPressMs = 0;
 
     public static ControlInterpreter controlInterp;
 
@@ -102,6 +103,9 @@ public class SDLOpenTouch
                 TouchSettings.gamePadEnabled);
 
         int div = intent.getIntExtra("res_div", 1);
+        // FNAF Movie Doom: FPS icin en az yari cozunurluk (Xiaomi 11T ~1200x540)
+        if (div < 2)
+            div = 2;
         resDiv = 1.0f / div;
     }
 
@@ -124,7 +128,13 @@ public class SDLOpenTouch
         // fixed landscape size, like Delta Touch's $W/$H substitution does.
         args += " +set vid_preferbackend 2 +set vid_fullscreen 1"
                 + " +set vid_defwidth " + fbWidth
-                + " +set vid_defheight " + fbHeight;
+                + " +set vid_defheight " + fbHeight
+                // FNAF Movie Doom mobil dusuk-grafik profili (FPS oncelikli)
+                + " +set CL_GraphicPreset 0 +set CL_ResIndex 0"
+                + " +set CL_TextureQuality 0 +set CL_ShadowQuality 0"
+                + " +set CL_SSAO 0 +set CL_Bloom 0 +set CL_Lens 0 +set CL_Antialiasing 0"
+                + " +set gl_ssao 0 +set gl_fxaa 0 +set gl_light_shadowmap 0"
+                + " +set vid_maxfps 60";
 
         String[] argsArray = Utils.createArgs(args);
 
@@ -199,12 +209,25 @@ public class SDLOpenTouch
             return true;
         }
 
-        // We always want the back button to do an escape
+        // Geri tusu = ESC, ama kenar kaydirma hareketleri de Android'de
+        // KEYCODE_BACK uretir ve analog cubuklari kullanirken yanlislikla
+        // duraklatma menusunu acar. Bu yuzden: ilk basış yutulur, 1.5 sn
+        // icinde gelen ikinci basış menuyu acar. Ekrandaki sol-ust geri
+        // butonu (native katman) tek dokunusla calismaya devam eder.
         if (keyCode == KeyEvent.KEYCODE_BACK)
         {
             if (event.getAction() == KeyEvent.ACTION_DOWN)
             {
-                NativeLib.backButton();
+                long now = android.os.SystemClock.uptimeMillis();
+                if (now - lastBackPressMs < 1500)
+                {
+                    lastBackPressMs = 0;
+                    NativeLib.backButton();
+                }
+                else
+                {
+                    lastBackPressMs = now;
+                }
             }
             return true;
         }
