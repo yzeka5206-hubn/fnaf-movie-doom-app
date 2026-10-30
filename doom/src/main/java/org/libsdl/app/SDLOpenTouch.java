@@ -103,9 +103,6 @@ public class SDLOpenTouch
                 TouchSettings.gamePadEnabled);
 
         int div = intent.getIntExtra("res_div", 1);
-        // FNAF Movie Doom: FPS icin en az yari cozunurluk (Xiaomi 11T ~1200x540)
-        if (div < 2)
-            div = 2;
         resDiv = 1.0f / div;
     }
 
@@ -126,9 +123,13 @@ public class SDLOpenTouch
         // swap-buffer callback. The GLES framebuffer takes its size from
         // vid_defwidth/vid_defheight (desktop default 640x480), so pass the
         // fixed landscape size, like Delta Touch's $W/$H substitution does.
+        // Ic render cozunurlugu ekranin 2/3'u (11T'de 1600x720): FPS dostu,
+        // dokunma koordinatlari tam ekran uzerinden calismaya devam eder.
+        int renderW = fbWidth * 2 / 3;
+        int renderH = fbHeight * 2 / 3;
         args += " +set vid_preferbackend 2 +set vid_fullscreen 1"
-                + " +set vid_defwidth " + fbWidth
-                + " +set vid_defheight " + fbHeight
+                + " +set vid_defwidth " + renderW
+                + " +set vid_defheight " + renderH
                 // FNAF Movie Doom mobil dusuk-grafik profili (FPS oncelikli)
                 + " +set CL_GraphicPreset 0 +set CL_ResIndex 0"
                 + " +set CL_TextureQuality 0 +set CL_ShadowQuality 0"
