@@ -52,6 +52,12 @@ public class SDLOpenTouch
     static NativeLib engine;
     static long lastBackPressMs = 0;
 
+    // These indicate that init was requested, not that the engine has loaded a level.
+    static volatile long fnafNativeInitAtMs = 0;
+    static volatile String fnafLogPath = "";
+    static volatile String fnafLaunchArgs = "";
+    static volatile int fnafOptions = 0;
+
     public static ControlInterpreter controlInterp;
 
     // Bridge references set by SDLActivity so this class stays independent of
@@ -136,9 +142,8 @@ public class SDLOpenTouch
                 + " +set CL_SSAO 0 +set CL_Bloom 0 +set CL_Lens 0 +set CL_Antialiasing 0"
                 + " +set gl_ssao 0 +set gl_fxaa 0 +set gl_light_shadowmap 0"
                 + " +set vid_maxfps 60"
-                // KRITIK: PC'de Launcher motoru dogrudan OUTSIDE haritasina sokar.
-                // Bu komut olmazsa motor TITLEMAP baslik ekraninda kalir; orada
-                // her tus menuyu acar ve gercek bolum/yuruyus hic baslamaz.
+                // Experimental explicit start: tests whether entering a level directly
+                // helps. The existing OUTSIDE scene does not prove the root cause.
                 + " +set sv_difficulty 1 +map OUTSIDE";
 
         String[] argsArray = Utils.createArgs(args);
@@ -177,6 +182,12 @@ public class SDLOpenTouch
         // dereferenced unconditionally.
         String resDir = gamePath + "/res";
 
+        // Publish initialization metadata before the blocking native call.
+        fnafLaunchArgs = args;
+        fnafLogPath = logFilename;
+        fnafOptions = options;
+        fnafNativeInitAtMs = android.os.SystemClock.elapsedRealtime();
+
         // Never returns: the engine main loop runs on this (the SDL) thread.
         NativeLib.init(pngFiles + "/", options, wheelNbr, argsArray, gameType, gamePath,
                 null, logFilename, nativeSoPath, userFiles, tmpFiles, sourceDir, resDir);
@@ -214,6 +225,30 @@ public class SDLOpenTouch
 
     // --- FNAF kendi dokunmatik katmani koprusu (Game.kt kullanir) ---
     // action kodlari: SPEED=10 USE=11 JUMP=12 ATTACK=13 CROUCH=15 ALT_ATTACK=64
+    public static boolean fnafCanQueryEngine()
+    {
+        long started = fnafNativeInitAtMs;
+        String path = fnafLogPath;
+        // init() creates the log before PortableInit initializes the command FIFO;
+        // wait a little before diagnostics can enqueue read-only console requests.
+        return engine != null && started > 0
+                && android.os.SystemClock.elapsedRealtime() - started >= 10000
+                && !path.isEmpty() && new java.io.File(path).isFile();
+    }
+
+    public static String fnafDebugInfo()
+    {
+        long started = fnafNativeInitAtMs;
+        long age = started > 0 ? android.os.SystemClock.elapsedRealtime() - started : -1;
+        return "native_init_istendi=" + (started > 0)
+                + " sure_ms=" + age
+                + " ekran=" + fbWidth + "x" + fbHeight
+                + " ic_coz=" + (fbWidth * 2 / 3) + "x" + (fbHeight * 2 / 3)
+                + " secenek=0x" + Integer.toHexString(fnafOptions)
+                + " sorgu_hazir=" + fnafCanQueryEngine()
+                + " args=" + fnafLaunchArgs;
+    }
+
     public static void fnafAction(int state, int action)
     {
         if (engine != null)

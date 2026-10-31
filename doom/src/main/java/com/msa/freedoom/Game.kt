@@ -1,5 +1,8 @@
 package com.msa.freedoom
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.content.res.Configuration
 import android.graphics.Canvas
 import android.graphics.Color
@@ -8,18 +11,23 @@ import android.graphics.Rect
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.Bundle
+import android.os.SystemClock
 import android.view.Gravity
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
+import android.widget.Button
 import android.widget.FrameLayout
+import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import android.widget.Toast
 import java.io.File
+import java.io.RandomAccessFile
+import java.util.ArrayDeque
 import org.libsdl.app.SDLOpenTouch
 import org.libsdl.app2012.SDLActivity
 import kotlin.math.hypot
-import kotlin.math.max
 import kotlin.math.min
 
 /**
@@ -41,6 +49,24 @@ import kotlin.math.min
  */
 class Game : SDLActivity() {
 
+    // This build identifier is also checked in the compiled APK by CI.
+    private val buildMarker = "FNAF_DIAG_V6_1_2026"
+    private val diagnosticEvents = ArrayDeque<String>()
+    private var analogMovementMode = false
+    private lateinit var joystick: JoystickView
+    private lateinit var logPanel: LinearLayout
+    private lateinit var logText: TextView
+    private var probeSerial = 0
+
+    @Synchronized
+    private fun recordEvent(message: String) {
+        while (diagnosticEvents.size >= 160) diagnosticEvents.removeFirst()
+        diagnosticEvents.addLast("${SystemClock.elapsedRealtime()}ms  $message")
+    }
+
+    @Synchronized
+    private fun eventSnapshot(): String = diagnosticEvents.joinToString("\n")
+
     override fun getLibraries(): Array<String> = arrayOf(
         "hidapi",
         "saffal",
@@ -53,6 +79,7 @@ class Game : SDLActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        recordEvent("Oyun aktivitesi acildi; surum=${BuildConfig.VERSION_NAME}")
         buildTouchOverlay()
     }
 
@@ -113,10 +140,13 @@ class Game : SDLActivity() {
         tv.setOnTouchListener { v, e ->
             when (e.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
+                    recordEvent("TUS $label: BASILDI")
                     v.alpha = 0.6f
                     onDown()
                 }
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    val durum = if (e.actionMasked == MotionEvent.ACTION_CANCEL) "IPTAL" else "BIRAKILDI"
+                    recordEvent("TUS $label: $durum")
                     v.alpha = 1f
                     onUp()
                 }
@@ -153,6 +183,7 @@ class Game : SDLActivity() {
             private var pid = -1
             private var lastX = 0f
             private var lastY = 0f
+            private var lastLogMs = 0L
 
             override fun onTouchEvent(e: MotionEvent): Boolean {
                 when (e.actionMasked) {
@@ -160,6 +191,7 @@ class Game : SDLActivity() {
                         pid = e.getPointerId(0)
                         lastX = e.x
                         lastY = e.y
+                        recordEvent("BAKIS: dokunuldu x=${e.x.toInt()} y=${e.y.toInt()}")
                     }
                     MotionEvent.ACTION_POINTER_DOWN -> Unit
                     MotionEvent.ACTION_MOVE -> {
@@ -173,9 +205,17 @@ class Game : SDLActivity() {
                             // ve analog birikimli bakis. Hangisini oyun kullanirsa.
                             SDLActivity.onNativeMouse(0, MotionEvent.ACTION_MOVE, dx, dy, true)
                             SDLOpenTouch.fnafLook(dy * 0.0016f, dx * 0.00055f)
+                            val now = SystemClock.elapsedRealtime()
+                            if (now - lastLogMs >= 300) {
+                                recordEvent("BAKIS: dx=${dx.toInt()} dy=${dy.toInt()} (SDL + analog)")
+                                lastLogMs = now
+                            }
                         }
                     }
-                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> pid = -1
+                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                        recordEvent("BAKIS: birakildi/iptal")
+                        pid = -1
+                    }
                 }
                 return true
             }
@@ -190,6 +230,7 @@ class Game : SDLActivity() {
 
         // 2) Sol dinamik analog cubuk (WASD yonunde analog hareket).
         val stick = JoystickView(this)
+        joystick = stick
         stick.layoutParams = FrameLayout.LayoutParams(dp(190), dp(190))
         place(root, stick, Gravity.BOTTOM or Gravity.START, left = 26, bottom = 30)
 
@@ -257,33 +298,8 @@ class Game : SDLActivity() {
         val menu = makeButton("MENU", 58, { SDLOpenTouch.fnafMenu() }, {})
         place(root, menu, Gravity.TOP or Gravity.START, left = 18, top = 14)
 
-        // 4b) LOG butonu: motorun gzdoom_log.txt ciktisini ekranda gosterir.
-        val logText = TextView(this)
-        logText.setTextColor(Color.rgb(0, 255, 128))
-        logText.setBackgroundColor(Color.argb(225, 0, 0, 0))
-        logText.textSize = 10f
-        logText.typeface = android.graphics.Typeface.MONOSPACE
-        val logScroll = ScrollView(this)
-        logScroll.addView(logText)
-        logScroll.visibility = View.GONE
-        logScroll.layoutParams = FrameLayout.LayoutParams(
-            FrameLayout.LayoutParams.MATCH_PARENT,
-            FrameLayout.LayoutParams.MATCH_PARENT,
-        )
-        (logScroll.layoutParams as FrameLayout.LayoutParams)
-            .setMargins(dp(10), dp(84), dp(10), dp(10))
-        root.addView(logScroll)
-
-        var logAcik = false
-        val logBtn = makeButton("LOG", 58, {
-            logAcik = !logAcik
-            if (logAcik) {
-                logText.text = readGameLog()
-                logScroll.visibility = View.VISIBLE
-            } else {
-                logScroll.visibility = View.GONE
-            }
-        }, {})
+        // LOG yalnızca uygulama panelini açar; motora ESC/ENTER göndermez.
+        val logBtn = makeButton("LOG", 58, { openLogPanel() }, {})
         place(root, logBtn, Gravity.TOP or Gravity.START, left = 88, top = 14)
 
         // 5) Ust sag: menu gezintisi (ENTER / yukari / asagi).
@@ -299,6 +315,16 @@ class Game : SDLActivity() {
         val down = makeButton("▼", 52, downDown, downUp)
         place(root, down, Gravity.TOP or Gravity.END, right = 158, top = 14)
 
+        // Add the panel last so its opaque background consumes touches while open.
+        logPanel = createLogPanel()
+        root.addView(
+            logPanel,
+            FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT,
+            ),
+        )
+
         addContentView(
             root,
             FrameLayout.LayoutParams(
@@ -308,27 +334,157 @@ class Game : SDLActivity() {
         )
     }
 
-    /** Motor log dosyasinin (gzdoom_log.txt) son bolumunu okur. */
-    private fun readGameLog(): String {
-        val base = intent.getStringExtra("game_path") ?: return "game_path yok"
-        val dir = File(base, "user_files")
-        val f = File(dir, "gzdoom_log.txt")
-        if (!f.exists()) {
-            val liste = dir.list()?.joinToString(", ") ?: "(klasor yok)"
-            return "Log dosyasi henuz yok.
-Beklenen: ${f.absolutePath}
-user_files icerigi: $liste"
+    /** UI events stay local; the player decides if and when to copy the report. */
+    private fun createLogPanel(): LinearLayout {
+        val panel = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(8), dp(6), dp(8), dp(6))
+            setBackgroundColor(Color.rgb(12, 17, 20))
+            isClickable = true
+            visibility = View.GONE
         }
-        return try {
-            val t = f.readText()
-            if (t.length > 12000) t.substring(t.length - 12000) else t
+        val toolbar = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        fun addToolbarButton(label: String, action: (Button) -> Unit) {
+            val button = Button(this).apply {
+                text = label
+                textSize = 12f
+                isAllCaps = false
+                minWidth = 0
+                minimumWidth = 0
+                minimumHeight = 0
+                setPadding(dp(4), 0, dp(4), 0)
+            }
+            button.setOnClickListener { action(button) }
+            toolbar.addView(button, LinearLayout.LayoutParams(0, dp(42), 1f))
+        }
+        addToolbarButton("YENILE") {
+            recordEvent("LOG: yenile")
+            requestEngineProbe("LOG_YENILE", includeMapAndBinds = true)
+            refreshLogPanel()
+        }
+        addToolbarButton("KOPYALA") {
+            recordEvent("LOG: kopyala")
+            val report = diagnosticReport()
+            logText.text = report
+            val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            clipboard.setPrimaryClip(ClipData.newPlainText("FNAF tani kaydi", report))
+            Toast.makeText(this, "Kopyalandi. Sohbete yapistirabilirsin.", Toast.LENGTH_LONG).show()
+        }
+        addToolbarButton("MOD: WASD") { button ->
+            joystick.stopAll("MOD_DEGISIMI")
+            analogMovementMode = !analogMovementMode
+            button.text = if (analogMovementMode) "MOD: ANALOG" else "MOD: WASD"
+            recordEvent("HAREKET MODU: ${if (analogMovementMode) "ANALOG" else "WASD"}")
+            refreshLogPanel()
+        }
+        addToolbarButton("KAPAT") {
+            recordEvent("LOG: kapat")
+            panel.visibility = View.GONE
+        }
+        panel.addView(toolbar, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(48),
+        ))
+
+        logText = TextView(this).apply {
+            setTextColor(Color.rgb(191, 243, 210))
+            textSize = 11f
+            typeface = android.graphics.Typeface.MONOSPACE
+            setPadding(dp(6), dp(8), dp(6), dp(8))
+            setTextIsSelectable(true)
+        }
+        val scroll = ScrollView(this).apply {
+            isFillViewport = true
+            addView(logText)
+        }
+        panel.addView(scroll, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f,
+        ))
+        return panel
+    }
+
+    private fun openLogPanel() {
+        joystick.stopAll("LOG_ACILDI")
+        recordEvent("LOG: acildi")
+        logPanel.visibility = View.VISIBLE
+        // Read-only engine commands are queued, not direct proof that a frame consumed them.
+        requestEngineProbe("LOG_ACILDI", includeMapAndBinds = true)
+        refreshLogPanel()
+    }
+
+    private fun refreshLogPanel() {
+        logText.text = diagnosticReport()
+        // Commands are processed on the engine thread; show their output after a short delay.
+        logPanel.postDelayed({
+            if (logPanel.visibility == View.VISIBLE) logText.text = diagnosticReport()
+        }, 1200)
+    }
+
+    private fun requestEngineProbe(label: String, includeMapAndBinds: Boolean = false) {
+        if (!SDLOpenTouch.fnafCanQueryEngine()) {
+            recordEvent("MOTOR SORGU $label: henuz hazir degil, atlandi")
+            return
+        }
+        val marker = "FNAF_DIAG_${++probeSerial}_$label"
+        try {
+            SDLOpenTouch.fnafCommand("echo $marker")
+            SDLOpenTouch.fnafCommand("currentpos")
+            if (includeMapAndBinds) {
+                SDLOpenTouch.fnafCommand("mapinfo")
+                SDLOpenTouch.fnafCommand("bind w")
+                SDLOpenTouch.fnafCommand("bind a")
+                SDLOpenTouch.fnafCommand("bind s")
+                SDLOpenTouch.fnafCommand("bind d")
+            }
+            recordEvent("MOTOR SORGU kuyruga eklendi: $marker")
         } catch (e: Exception) {
-            "Log okunamadi: ${e.message}"
+            recordEvent("MOTOR SORGU HATASI: ${e.javaClass.simpleName}: ${e.message}")
+        } catch (e: LinkageError) {
+            recordEvent("MOTOR KOPRU HATASI: ${e.javaClass.simpleName}: ${e.message}")
         }
     }
 
-    /** Dinamik (basilan yerde beliren) analog cubuk. */
-    private inner class JoystickView(ctx: android.content.Context) : View(ctx) {
+    private fun diagnosticReport(): String = buildString {
+        appendLine("$buildMarker | v${BuildConfig.VERSION_NAME}")
+        appendLine("Cihaz: ${Build.MANUFACTURER} ${Build.MODEL} | Android ${Build.VERSION.RELEASE}")
+        appendLine("Hareket modu: ${if (analogMovementMode) "ANALOG" else "WASD"}")
+        appendLine("Kopru: ${SDLOpenTouch.fnafDebugInfo()}")
+        appendLine("Deneme: Oyuna don, cubugu birkac saniye it, LOG > KOPYALA yap.")
+        appendLine("MOD dugmesi ile WASD ve ANALOG ayri ayri denenebilir.")
+        appendLine("LOG, yalnizca sen KOPYALA'ya basarsan paylasilir.")
+        appendLine("Motor sorgulari kuyruga yazilir; motor islememisse cevap gorunmeyebilir.")
+        appendLine()
+        appendLine("=== SON KONTROL OLAYLARI ===")
+        appendLine(eventSnapshot().ifEmpty { "Henuz olay yok." })
+        appendLine()
+        appendLine("=== MOTOR GUNLUGU (SON 24 KB) ===")
+        append(readGameLog())
+    }
+
+    /** Read only a bounded tail: the engine can keep appending while the game runs. */
+    private fun readGameLog(): String {
+        val base = intent.getStringExtra("game_path") ?: return "game_path bulunamadi."
+        val file = File(File(base, "user_files"), "gzdoom_log.txt")
+        if (!file.isFile) return "Motor gunlugu henuz olusmadi: ${file.absolutePath}"
+        return try {
+            RandomAccessFile(file, "r").use { input ->
+                val size = input.length()
+                val byteCount = min(size, 24_000L).toInt()
+                input.seek(size - byteCount)
+                val bytes = ByteArray(byteCount)
+                input.readFully(bytes)
+                val prefix = if (size > byteCount) "[daha eski kisim kesildi]\n" else ""
+                "Dosya boyutu: $size bayt\n$prefix${String(bytes, Charsets.UTF_8)}"
+            }
+        } catch (e: Exception) {
+            "Motor gunlugu okunamadi: ${e.javaClass.simpleName}: ${e.message}"
+        }
+    }
+
+    /** Dynamic stick; only one input path is enabled at a time for diagnosis. */
+    private inner class JoystickView(ctx: Context) : View(ctx) {
         private val basePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.argb(60, 255, 255, 255)
             style = Paint.Style.STROKE
@@ -347,7 +503,10 @@ user_files icerigi: $liste"
         private var centerY = 0f
         private var knobX = 0f
         private var knobY = 0f
-        private val basili = mutableSetOf<Int>()
+        private val pressed = mutableSetOf<Int>()
+        private var analogSent = false
+        private var probeStarted = false
+        private var lastAnalogLogMs = 0L
 
         override fun onDraw(canvas: Canvas) {
             super.onDraw(canvas)
@@ -356,9 +515,30 @@ user_files icerigi: $liste"
             val r = dp(62).toFloat()
             canvas.drawCircle(cx, cy, r, fillPaint)
             canvas.drawCircle(cx, cy, r, basePaint)
-            val kx = if (active) knobX else cx
-            val ky = if (active) knobY else cy
-            canvas.drawCircle(kx, ky, dp(27).toFloat(), knobPaint)
+            canvas.drawCircle(if (active) knobX else cx, if (active) knobY else cy,
+                dp(27).toFloat(), knobPaint)
+        }
+
+        private fun releaseInputs() {
+            for (key in pressed.toList()) {
+                SDLActivity.onNativeKeyUp(key)
+                recordEvent("CUBUK SDL TUS YUKARI: ${KeyEvent.keyCodeToString(key)}")
+            }
+            pressed.clear()
+            if (analogSent) {
+                SDLOpenTouch.fnafMove(0f, 0f)
+                analogSent = false
+                recordEvent("CUBUK ANALOG: sifirlandi")
+            }
+        }
+
+        fun stopAll(reason: String) {
+            releaseInputs()
+            if (active && probeStarted) requestEngineProbe("CUBUK_BITIS_$reason")
+            if (active) recordEvent("CUBUK: durduruldu ($reason)")
+            active = false
+            probeStarted = false
+            invalidate()
         }
 
         override fun onTouchEvent(e: MotionEvent): Boolean {
@@ -366,49 +546,66 @@ user_files icerigi: $liste"
             when (e.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
                     active = true
+                    probeStarted = false
                     centerX = e.x
                     centerY = e.y
                     knobX = e.x
                     knobY = e.y
+                    recordEvent("CUBUK: dokunuldu x=${e.x.toInt()} y=${e.y.toInt()}")
                 }
-                MotionEvent.ACTION_MOVE -> {
-                    if (active) {
-                        var dx = e.x - centerX
-                        var dy = e.y - centerY
-                        val dist = hypot(dx, dy)
-                        if (dist > radius) {
-                            dx *= radius / dist
-                            dy *= radius / dist
+                MotionEvent.ACTION_MOVE -> if (active) {
+                    var dx = e.x - centerX
+                    var dy = e.y - centerY
+                    val dist = hypot(dx, dy)
+                    if (dist > radius) {
+                        dx *= radius / dist
+                        dy *= radius / dist
+                    }
+                    knobX = centerX + dx
+                    knobY = centerY + dy
+                    val nx = dx / radius
+                    val ny = dy / radius
+                    val magnitude = hypot(nx, ny)
+                    if (!probeStarted && magnitude >= 0.30f) {
+                        probeStarted = true
+                        requestEngineProbe("CUBUK_BASLA")
+                    }
+                    if (analogMovementMode) {
+                        val fwd = if (magnitude >= 0.30f) -ny else 0f
+                        val side = if (magnitude >= 0.30f) nx else 0f
+                        SDLOpenTouch.fnafMove(fwd, side)
+                        analogSent = true
+                        val now = SystemClock.elapsedRealtime()
+                        if (now - lastAnalogLogMs >= 300) {
+                            recordEvent("CUBUK ANALOG: ileri=${(fwd * 100).toInt()}% yan=${(side * 100).toInt()}%")
+                            lastAnalogLogMs = now
                         }
-                        knobX = centerX + dx
-                        knobY = centerY + dy
-                        val nx = dx / radius
-                        val ny = dy / radius
-                        val istiyor = mutableSetOf<Int>()
-                        if (hypot(nx, ny) >= 0.30f) {
-                            if (ny < -0.35f) istiyor.add(KeyEvent.KEYCODE_W)
-                            if (ny > 0.35f) istiyor.add(KeyEvent.KEYCODE_S)
-                            if (nx < -0.35f) istiyor.add(KeyEvent.KEYCODE_A)
-                            if (nx > 0.35f) istiyor.add(KeyEvent.KEYCODE_D)
+                    } else {
+                        val wanted = mutableSetOf<Int>()
+                        if (magnitude >= 0.30f) {
+                            if (ny < -0.35f) wanted.add(KeyEvent.KEYCODE_W)
+                            if (ny > 0.35f) wanted.add(KeyEvent.KEYCODE_S)
+                            if (nx < -0.35f) wanted.add(KeyEvent.KEYCODE_A)
+                            if (nx > 0.35f) wanted.add(KeyEvent.KEYCODE_D)
                         }
-                        for (k in basili.toList()) {
-                            if (k !in istiyor) {
-                                SDLActivity.onNativeKeyUp(k)
-                                basili.remove(k)
+                        for (key in pressed.toList()) {
+                            if (key !in wanted) {
+                                SDLActivity.onNativeKeyUp(key)
+                                pressed.remove(key)
+                                recordEvent("CUBUK SDL TUS YUKARI: ${KeyEvent.keyCodeToString(key)}")
                             }
                         }
-                        for (k in istiyor) {
-                            if (k !in basili) {
-                                SDLActivity.onNativeKeyDown(k)
-                                basili.add(k)
+                        for (key in wanted) {
+                            if (key !in pressed) {
+                                SDLActivity.onNativeKeyDown(key)
+                                pressed.add(key)
+                                recordEvent("CUBUK SDL TUS ASAGI: ${KeyEvent.keyCodeToString(key)}")
                             }
                         }
                     }
                 }
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                    active = false
-                    for (k in basili.toList()) SDLActivity.onNativeKeyUp(k)
-                    basili.clear()
+                    stopAll(if (e.actionMasked == MotionEvent.ACTION_CANCEL) "IPTAL" else "BIRAKILDI")
                 }
             }
             invalidate()

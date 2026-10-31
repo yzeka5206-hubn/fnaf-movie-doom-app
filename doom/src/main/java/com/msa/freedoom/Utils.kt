@@ -75,7 +75,11 @@ object Utils {
         copyGameAsset(responsibleActivity, "game/FNAFMovie.ipk3", fullBaseDir)
         copyGameAsset(responsibleActivity, "game/FiveNightsAtFreddysDoomMOVIE.wad", fullModDir)
         copyGameAsset(responsibleActivity, "game/FiveNightsAtFreddysDoomMOVIE.pk3", fullModDir)
-        copyGameAsset(responsibleActivity, "game/camera_move.pk3", fullModDir)
+        // This optional addon is not bundled in every build. Its absence must
+        // not stop a fresh install from launching the required movie packages.
+        if (responsibleActivity.assets.list("game")?.contains("camera_move.pk3") == true) {
+            copyGameAsset(responsibleActivity, "game/camera_move.pk3", fullModDir)
+        }
     }
 
     /** Copies assets/game/<name> into [destdir] once (skips if already present). */
