@@ -239,6 +239,13 @@ public class SDLOpenTouch
         NativeLib.backButton();
     }
 
+    // Konsol komutu gonder (ornegin "+altattack" / "-altattack"): motorun
+    // kendi komut kuyrugu uzerinden, PC'deki tus baglama sistemiyle ayni yol.
+    public static void fnafCommand(String cmd)
+    {
+        NativeLib.executeCommand(cmd);
+    }
+
     public static boolean onKey(int keyCode, KeyEvent event)
     {
         int source = event.getSource();

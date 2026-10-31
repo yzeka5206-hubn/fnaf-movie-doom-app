@@ -167,7 +167,9 @@ class Game : SDLActivity() {
                             val dy = e.getY(i) - lastY
                             lastX = e.getX(i)
                             lastY = e.getY(i)
-                            // Carpimlar ilk ayar; oyun ici geri bildirime gore ince ayarlanir.
+                            // Iki yol birden: motorun fare bakisi (SDL relative mouse)
+                            // ve analog birikimli bakis. Hangisini oyun kullanirsa.
+                            SDLActivity.onNativeMouse(0, MotionEvent.ACTION_MOVE, dx, dy, true)
                             SDLOpenTouch.fnafLook(dy * 0.0016f, dx * 0.00055f)
                         }
                     }
@@ -194,31 +196,59 @@ class Game : SDLActivity() {
             {
                 SDLOpenTouch.fnafAction(1, ACT_ATTACK)
                 SDLOpenTouch.fnafAction(1, ACT_USE)
+                SDLActivity.onNativeKeyDown(KeyEvent.KEYCODE_E)
+                SDLOpenTouch.fnafCommand("+attack")
             },
             {
                 SDLOpenTouch.fnafAction(0, ACT_ATTACK)
                 SDLOpenTouch.fnafAction(0, ACT_USE)
+                SDLActivity.onNativeKeyUp(KeyEvent.KEYCODE_E)
+                SDLOpenTouch.fnafCommand("-attack")
             })
         place(root, al, Gravity.BOTTOM or Gravity.END, right = 30, bottom = 36)
 
         val fener = makeButton("FENER", 70,
-            { SDLOpenTouch.fnafAction(1, ACT_ALT_ATTACK) },
-            { SDLOpenTouch.fnafAction(0, ACT_ALT_ATTACK) })
+            {
+                SDLOpenTouch.fnafAction(1, ACT_ALT_ATTACK)
+                SDLOpenTouch.fnafCommand("+altattack")
+            },
+            {
+                SDLOpenTouch.fnafAction(0, ACT_ALT_ATTACK)
+                SDLOpenTouch.fnafCommand("-altattack")
+            })
         place(root, fener, Gravity.BOTTOM or Gravity.END, right = 132, bottom = 36)
 
         val zipla = makeButton("ZIPLA", 64,
-            { SDLOpenTouch.fnafAction(1, ACT_JUMP) },
-            { SDLOpenTouch.fnafAction(0, ACT_JUMP) })
+            {
+                SDLOpenTouch.fnafAction(1, ACT_JUMP)
+                SDLActivity.onNativeKeyDown(KeyEvent.KEYCODE_SPACE)
+            },
+            {
+                SDLOpenTouch.fnafAction(0, ACT_JUMP)
+                SDLActivity.onNativeKeyUp(KeyEvent.KEYCODE_SPACE)
+            })
         place(root, zipla, Gravity.BOTTOM or Gravity.END, right = 40, bottom = 140)
 
         val egil = makeButton("EGIL", 64,
-            { SDLOpenTouch.fnafAction(1, ACT_CROUCH) },
-            { SDLOpenTouch.fnafAction(0, ACT_CROUCH) })
+            {
+                SDLOpenTouch.fnafAction(1, ACT_CROUCH)
+                SDLActivity.onNativeKeyDown(KeyEvent.KEYCODE_CTRL_LEFT)
+            },
+            {
+                SDLOpenTouch.fnafAction(0, ACT_CROUCH)
+                SDLActivity.onNativeKeyUp(KeyEvent.KEYCODE_CTRL_LEFT)
+            })
         place(root, egil, Gravity.BOTTOM or Gravity.END, right = 122, bottom = 128)
 
         val kos = makeButton("KOS", 64,
-            { SDLOpenTouch.fnafAction(1, ACT_SPEED) },
-            { SDLOpenTouch.fnafAction(0, ACT_SPEED) })
+            {
+                SDLOpenTouch.fnafAction(1, ACT_SPEED)
+                SDLActivity.onNativeKeyDown(KeyEvent.KEYCODE_SHIFT_LEFT)
+            },
+            {
+                SDLOpenTouch.fnafAction(0, ACT_SPEED)
+                SDLActivity.onNativeKeyUp(KeyEvent.KEYCODE_SHIFT_LEFT)
+            })
         place(root, kos, Gravity.BOTTOM or Gravity.END, right = 44, bottom = 224)
 
         // 4) Ust sol: MENU (bilerek, tek yerden duraklatma).
@@ -267,6 +297,7 @@ class Game : SDLActivity() {
         private var centerY = 0f
         private var knobX = 0f
         private var knobY = 0f
+        private val basili = mutableSetOf<Int>()
 
         override fun onDraw(canvas: Canvas) {
             super.onDraw(canvas)
@@ -301,18 +332,33 @@ class Game : SDLActivity() {
                         }
                         knobX = centerX + dx
                         knobY = centerY + dy
-                        var nx = dx / radius
-                        var ny = dy / radius
-                        if (hypot(nx, ny) < 0.14f) {
-                            nx = 0f
-                            ny = 0f
+                        val nx = dx / radius
+                        val ny = dy / radius
+                        val istiyor = mutableSetOf<Int>()
+                        if (hypot(nx, ny) >= 0.30f) {
+                            if (ny < -0.35f) istiyor.add(KeyEvent.KEYCODE_W)
+                            if (ny > 0.35f) istiyor.add(KeyEvent.KEYCODE_S)
+                            if (nx < -0.35f) istiyor.add(KeyEvent.KEYCODE_A)
+                            if (nx > 0.35f) istiyor.add(KeyEvent.KEYCODE_D)
                         }
-                        SDLOpenTouch.fnafMove(-ny, nx)
+                        for (k in basili.toList()) {
+                            if (k !in istiyor) {
+                                SDLActivity.onNativeKeyUp(k)
+                                basili.remove(k)
+                            }
+                        }
+                        for (k in istiyor) {
+                            if (k !in basili) {
+                                SDLActivity.onNativeKeyDown(k)
+                                basili.add(k)
+                            }
+                        }
                     }
                 }
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                     active = false
-                    SDLOpenTouch.fnafMove(0f, 0f)
+                    for (k in basili.toList()) SDLActivity.onNativeKeyUp(k)
+                    basili.clear()
                 }
             }
             invalidate()
