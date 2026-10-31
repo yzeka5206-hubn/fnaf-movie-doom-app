@@ -13,7 +13,9 @@ import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
 import android.widget.FrameLayout
+import android.widget.ScrollView
 import android.widget.TextView
+import java.io.File
 import org.libsdl.app.SDLOpenTouch
 import org.libsdl.app2012.SDLActivity
 import kotlin.math.hypot
@@ -255,6 +257,35 @@ class Game : SDLActivity() {
         val menu = makeButton("MENU", 58, { SDLOpenTouch.fnafMenu() }, {})
         place(root, menu, Gravity.TOP or Gravity.START, left = 18, top = 14)
 
+        // 4b) LOG butonu: motorun gzdoom_log.txt ciktisini ekranda gosterir.
+        val logText = TextView(this)
+        logText.setTextColor(Color.rgb(0, 255, 128))
+        logText.setBackgroundColor(Color.argb(225, 0, 0, 0))
+        logText.textSize = 10f
+        logText.typeface = android.graphics.Typeface.MONOSPACE
+        val logScroll = ScrollView(this)
+        logScroll.addView(logText)
+        logScroll.visibility = View.GONE
+        logScroll.layoutParams = FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT,
+            FrameLayout.LayoutParams.MATCH_PARENT,
+        )
+        (logScroll.layoutParams as FrameLayout.LayoutParams)
+            .setMargins(dp(10), dp(84), dp(10), dp(10))
+        root.addView(logScroll)
+
+        var logAcik = false
+        val logBtn = makeButton("LOG", 58, {
+            logAcik = !logAcik
+            if (logAcik) {
+                logText.text = readGameLog()
+                logScroll.visibility = View.VISIBLE
+            } else {
+                logScroll.visibility = View.GONE
+            }
+        }, {})
+        place(root, logBtn, Gravity.TOP or Gravity.START, left = 88, top = 14)
+
         // 5) Ust sag: menu gezintisi (ENTER / yukari / asagi).
         val (enterDown, enterUp) = keyTap(KeyEvent.KEYCODE_ENTER)
         val enter = makeButton("ENTER", 62, enterDown, enterUp)
@@ -275,6 +306,25 @@ class Game : SDLActivity() {
                 FrameLayout.LayoutParams.MATCH_PARENT,
             ),
         )
+    }
+
+    /** Motor log dosyasinin (gzdoom_log.txt) son bolumunu okur. */
+    private fun readGameLog(): String {
+        val base = intent.getStringExtra("game_path") ?: return "game_path yok"
+        val dir = File(base, "user_files")
+        val f = File(dir, "gzdoom_log.txt")
+        if (!f.exists()) {
+            val liste = dir.list()?.joinToString(", ") ?: "(klasor yok)"
+            return "Log dosyasi henuz yok.
+Beklenen: ${f.absolutePath}
+user_files icerigi: $liste"
+        }
+        return try {
+            val t = f.readText()
+            if (t.length > 12000) t.substring(t.length - 12000) else t
+        } catch (e: Exception) {
+            "Log okunamadi: ${e.message}"
+        }
     }
 
     /** Dinamik (basilan yerde beliren) analog cubuk. */

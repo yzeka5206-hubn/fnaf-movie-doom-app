@@ -135,7 +135,11 @@ public class SDLOpenTouch
                 + " +set CL_TextureQuality 0 +set CL_ShadowQuality 0"
                 + " +set CL_SSAO 0 +set CL_Bloom 0 +set CL_Lens 0 +set CL_Antialiasing 0"
                 + " +set gl_ssao 0 +set gl_fxaa 0 +set gl_light_shadowmap 0"
-                + " +set vid_maxfps 60";
+                + " +set vid_maxfps 60"
+                // KRITIK: PC'de Launcher motoru dogrudan OUTSIDE haritasina sokar.
+                // Bu komut olmazsa motor TITLEMAP baslik ekraninda kalir; orada
+                // her tus menuyu acar ve gercek bolum/yuruyus hic baslamaz.
+                + " +set sv_difficulty 1 +map OUTSIDE";
 
         String[] argsArray = Utils.createArgs(args);
 
