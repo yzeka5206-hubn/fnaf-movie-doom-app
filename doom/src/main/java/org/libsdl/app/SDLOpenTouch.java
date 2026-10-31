@@ -145,6 +145,10 @@ public class SDLOpenTouch
         // The engine renders with its own GLES3 backend; the touch controls
         // draw with the matching GLES context.
         options |= 0x10; // GAME_OPTION_GLES3
+        // FNAF: hazir menu/oyun dokunmatik duzenini gizle; kendi katmanimiz (Game.kt)
+        // kullanilacak. Hazir duzen ara sahnelerde ekrana USE+ENTER gonderip
+        // ana menuyu aciyordu.
+        options |= 0x2; // GAME_OPTION_HIDE_MENU_AND_GAME
 
         int gameType = 1; // GAME_TYPE_DOOM
         int wheelNbr = 10;
@@ -198,7 +202,41 @@ public class SDLOpenTouch
 
     public static boolean onTouchEvent(MotionEvent event)
     {
-        return controlInterp != null && controlInterp.onTouchEvent(event);
+        // FNAF: SDL yuzeyine gelen dokunmalari yut. Hazir native duzenin
+        // "blank" grubundaki gorunmez dev buton her dokunusu USE+ENTER'a
+        // cevirip menuyu aciyordu. Tum giris Game.kt'deki kendi katmanimizdan.
+        return true;
+    }
+
+    // --- FNAF kendi dokunmatik katmani koprusu (Game.kt kullanir) ---
+    // action kodlari: SPEED=10 USE=11 JUMP=12 ATTACK=13 CROUCH=15 ALT_ATTACK=64
+    public static void fnafAction(int state, int action)
+    {
+        if (engine != null)
+            engine.doAction_if(state, action);
+    }
+
+    public static void fnafMove(float fwd, float side)
+    {
+        if (engine != null)
+        {
+            engine.analogFwd_if(fwd);
+            engine.analogSide_if(side);
+        }
+    }
+
+    public static void fnafLook(float pitch, float yaw)
+    {
+        if (engine != null)
+        {
+            engine.analogPitch_if(0, pitch); // LOOK_MODE_MOUSE (birikimli)
+            engine.analogYaw_if(0, yaw);
+        }
+    }
+
+    public static void fnafMenu()
+    {
+        NativeLib.backButton();
     }
 
     public static boolean onKey(int keyCode, KeyEvent event)
