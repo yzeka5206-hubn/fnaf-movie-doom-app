@@ -12,13 +12,14 @@ SMALL_ASSETS = {name: (4, magic) for name, (_, magic) in verifier.ASSETS.items()
 
 
 class ApkVerifierTest(unittest.TestCase):
-    def make_apk(self, directory, *, marker=True, missing=None, bad_magic=None):
+    def make_apk(self, directory, *, marker=True, missing=None, bad_magic=None, missing_marker=None):
         apk = Path(directory) / "app-debug.apk"
         with zipfile.ZipFile(apk, "w") as archive:
             for name, (_, magic) in SMALL_ASSETS.items():
                 if name != missing:
                     archive.writestr(name, b"version https://git-lfs.github.com/spec/v1" if name == bad_magic else magic + b"valid-game-content")
-            archive.writestr("classes2.dex", b"dex\n" + (verifier.BUILD_MARKER if marker else b"old-build"))
+            markers = b"|".join(m for m in verifier.REQUIRED_DEX_MARKERS if m != missing_marker)
+            archive.writestr("classes2.dex", b"dex\n" + (markers if marker else b"old-build"))
         return apk
 
     @patch.object(verifier, "ASSETS", SMALL_ASSETS)
@@ -32,6 +33,12 @@ class ApkVerifierTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             with self.assertRaisesRegex(ValueError, "marker"):
                 verifier.validate_apk(self.make_apk(temp, marker=False))
+
+    @patch.object(verifier, "ASSETS", SMALL_ASSETS)
+    def test_incomplete_control_build_rejected(self):
+        with tempfile.TemporaryDirectory() as temp:
+            with self.assertRaisesRegex(ValueError, "marker"):
+                verifier.validate_apk(self.make_apk(temp, missing_marker=b"forwardSoftEnter"))
 
     @patch.object(verifier, "ASSETS", SMALL_ASSETS)
     def test_missing_game_asset_rejected(self):

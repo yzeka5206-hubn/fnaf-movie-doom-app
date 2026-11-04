@@ -7,7 +7,16 @@ import sys
 import zipfile
 from pathlib import Path
 
-BUILD_MARKER = b"FNAF_DIAG_V6_1_2026"
+BUILD_MARKER = b"FNAF_DIAG_V7_2026"
+REQUIRED_DEX_MARKERS = (
+    BUILD_MARKER,
+    b"0.7.0-kontroller",
+    b"LatchingSwitch",
+    b"forwardSoftEnter",
+    b"KLAVYE",
+    b"FARE",
+    b"SAAT",
+)
 ASSETS = {
     "assets/game/FNAFMovie.ipk3": (10_000, b"PK\x03\x04"),
     "assets/game/FiveNightsAtFreddysDoomMOVIE.wad": (10_000_000, b"PWAD"),
@@ -33,8 +42,10 @@ def validate_apk(apk: Path) -> dict[str, int]:
                 if source.read(len(magic)) != magic:
                     raise ValueError(f"Game asset has wrong file format: {name}")
         dex_names = [n for n in names if n.startswith("classes") and n.endswith(".dex")]
-        if not dex_names or not any(BUILD_MARKER in archive.read(name) for name in dex_names):
-            raise ValueError("Diagnostic build marker not found in APK dex files")
+        dex_files = [archive.read(name) for name in dex_names]
+        for marker in REQUIRED_DEX_MARKERS:
+            if not any(marker in dex for dex in dex_files):
+                raise ValueError(f"Required build marker not found in APK dex files: {marker!r}")
     return sizes
 
 
@@ -55,7 +66,7 @@ def main() -> int:
                 digest.update(chunk)
         checksum = apk.with_name(apk.name + ".sha256")
         checksum.write_text(f"{digest.hexdigest()}  {apk.name}\n", encoding="utf-8")
-        print(f"Verified {apk.name}: diagnostic build marker and all three real game assets present")
+        print(f"Verified {apk.name}: v7 controls markers and all three real game assets present")
         for name, size in sizes.items():
             print(f"  {name}: {size} bytes")
         print(f"SHA-256: {digest.hexdigest()}")

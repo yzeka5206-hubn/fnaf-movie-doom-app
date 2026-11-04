@@ -2344,50 +2344,63 @@ class DummyEdit extends View implements View.OnKeyListener {
 
 class SDLInputConnection extends BaseInputConnection {
 
+    private long lastSoftEnterMs = -1;
+
     public SDLInputConnection(View targetView, boolean fullEditor) {
         super(targetView, fullEditor);
+    }
 
+    // IMEs use different pathways for their Enter/Done key. Always forward a
+    // single real Return to the game (chat send); do not silently just hide
+    // the keyboard. De-duplicate IMEs that report the same action twice.
+    private void forwardSoftEnter() {
+        long now = android.os.SystemClock.uptimeMillis();
+        if (lastSoftEnterMs >= 0 && now - lastSoftEnterMs < 180) return;
+        lastSoftEnterMs = now;
+        SDLActivity.onNativeKeyDown(KeyEvent.KEYCODE_ENTER);
+        SDLActivity.onNativeKeyUp(KeyEvent.KEYCODE_ENTER);
     }
 
     @Override
     public boolean sendKeyEvent(KeyEvent event) {
-        /*
-         * This used to handle the keycodes from soft keyboard (and IME-translated input from hardkeyboard)
-         * However, as of Ice Cream Sandwich and later, almost all soft keyboard doesn't generate key presses
-         * and so we need to generate them ourselves in commitText.  To avoid duplicates on the handful of keys
-         * that still do, we empty this out.
-         */
-
-        /*
-         * Return DOES still generate a key event, however.  So rather than using it as the 'click a button' key
-         * as we do with physical keyboards, let's just use it to hide the keyboard.
-         */
-
         if (event.getKeyCode() == KeyEvent.KEYCODE_ENTER) {
-            if (SDLActivity.onNativeSoftReturnKey()) {
-                return true;
+            if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
+                forwardSoftEnter();
             }
+            return true;
         }
-
-
         return super.sendKeyEvent(event);
     }
 
     @Override
-    public boolean commitText(CharSequence text, int newCursorPosition) {
+    public boolean performEditorAction(int actionCode) {
+        forwardSoftEnter();
+        return true;
+    }
 
-        for (int i = 0; i < text.length(); i++) {
-            char c = text.charAt(i);
-            if (c == '\n') {
-                if (SDLActivity.onNativeSoftReturnKey()) {
-                    return true;
+    @Override
+    public boolean commitText(CharSequence text, int newCursorPosition) {
+        String value = text.toString();
+        if (value.indexOf('\n') >= 0 || value.indexOf('\r') >= 0) {
+            int start = 0;
+            for (int i = 0; i < value.length(); i++) {
+                char c = value.charAt(i);
+                if (c == '\n' || c == '\r') {
+                    if (i > start) commitText(value.substring(start, i), newCursorPosition);
+                    if (c != '\n' || i == 0 || value.charAt(i - 1) != '\r') {
+                        forwardSoftEnter();
+                    }
+                    start = i + 1;
                 }
             }
-            nativeGenerateScancodeForUnichar(c);
+            if (start < value.length()) commitText(value.substring(start), newCursorPosition);
+            return true;
         }
 
-        SDLInputConnection.nativeCommitText(text.toString(), newCursorPosition);
-
+        for (int i = 0; i < value.length(); i++) {
+            nativeGenerateScancodeForUnichar(value.charAt(i));
+        }
+        SDLInputConnection.nativeCommitText(value, newCursorPosition);
         return super.commitText(text, newCursorPosition);
     }
 

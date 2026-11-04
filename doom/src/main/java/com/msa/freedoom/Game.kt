@@ -11,6 +11,8 @@ import android.graphics.Rect
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.os.SystemClock
 import android.view.Gravity
 import android.view.KeyEvent
@@ -50,13 +52,29 @@ import kotlin.math.min
 class Game : SDLActivity() {
 
     // This build identifier is also checked in the compiled APK by CI.
-    private val buildMarker = "FNAF_DIAG_V6_1_2026"
+    private val buildMarker = "FNAF_DIAG_V7_2026"
     private val diagnosticEvents = ArrayDeque<String>()
     private var analogMovementMode = false
     private lateinit var joystick: JoystickView
     private lateinit var logPanel: LinearLayout
     private lateinit var logText: TextView
     private var probeSerial = 0
+
+    private val watchState = LatchingSwitch()
+    private val crouchState = LatchingSwitch()
+    private var watchButton: TextView? = null
+    private var crouchButton: TextView? = null
+    private var cursorMode = false
+    private var reverseLookX = true
+    private var reverseLookY = true
+    private val heldOverlayKeys = mutableSetOf<Int>()
+    private val heldActions = mutableSetOf<Int>()
+    private var mousePrimaryDown = false
+    private val inputHandler = Handler(Looper.getMainLooper())
+    private val flashlightRelease = Runnable {
+        setHeldAction(ACT_ATTACK, false)
+        recordEvent("FENER: tek atim tamamlandi")
+    }
 
     @Synchronized
     private fun recordEvent(message: String) {
@@ -79,6 +97,9 @@ class Game : SDLActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        val controls = getSharedPreferences("fnaf_controls_v7", Context.MODE_PRIVATE)
+        reverseLookX = controls.getBoolean("reverse_x", true)
+        reverseLookY = controls.getBoolean("reverse_y", true)
         recordEvent("Oyun aktivitesi acildi; surum=${BuildConfig.VERSION_NAME}")
         buildTouchOverlay()
     }
@@ -105,7 +126,13 @@ class Game : SDLActivity() {
         }
     }
 
+    override fun onPause() {
+        releaseAllOverlayInputs("UYKU")
+        super.onPause()
+    }
+
     override fun onDestroy() {
+        releaseAllOverlayInputs("KAPANIS")
         super.onDestroy()
         // The engine cannot re-initialise in the same process (static state,
         // and NativeLib.init never returns); kill the process so the next
@@ -172,8 +199,90 @@ class Game : SDLActivity() {
         parent.addView(view)
     }
 
+    private fun setOverlayKey(keyCode: Int, down: Boolean) {
+        if (down && heldOverlayKeys.add(keyCode)) SDLActivity.onNativeKeyDown(keyCode)
+        if (!down && heldOverlayKeys.remove(keyCode)) SDLActivity.onNativeKeyUp(keyCode)
+    }
+
     private fun keyTap(keyCode: Int): Pair<() -> Unit, () -> Unit> =
-        Pair({ SDLActivity.onNativeKeyDown(keyCode) }, { SDLActivity.onNativeKeyUp(keyCode) })
+        Pair({ setOverlayKey(keyCode, true) }, { setOverlayKey(keyCode, false) })
+
+    private fun setHeldAction(action: Int, down: Boolean) {
+        if (down && heldActions.add(action)) SDLOpenTouch.fnafAction(1, action)
+        if (!down && heldActions.remove(action)) SDLOpenTouch.fnafAction(0, action)
+    }
+
+    private fun updateLatchButtons() {
+        watchButton?.apply {
+            text = if (watchState.active) "SAAT\nACIK" else "SAAT"
+            setTextColor(if (watchState.active) Color.YELLOW else Color.WHITE)
+        }
+        crouchButton?.apply {
+            text = if (crouchState.active) "EGIL\nACIK" else "EGIL"
+            setTextColor(if (crouchState.active) Color.YELLOW else Color.WHITE)
+        }
+    }
+
+    private fun pulseFlashlight() {
+        // Fire already toggles the light in the game. A short pulse prevents a
+        // long finger press from repeatedly toggling it via weapon auto-fire.
+        if (ACT_ATTACK in heldActions) return
+        setHeldAction(ACT_ATTACK, true)
+        inputHandler.postDelayed(flashlightRelease, 150L)
+    }
+
+    private fun setPrimaryMouse(down: Boolean) {
+        if (mousePrimaryDown == down) return
+        mousePrimaryDown = down
+        SDLActivity.onNativeMouse(
+            if (down) 1 else 0,
+            if (down) MotionEvent.ACTION_DOWN else MotionEvent.ACTION_UP,
+            0f, 0f, true,
+        )
+        recordEvent("FARE SOL TIK: ${if (down) "BAS" else "BIRAK"}")
+    }
+
+    private fun releaseGameplayInputs(reason: String) {
+        if (::joystick.isInitialized) joystick.stopAll(reason)
+        inputHandler.removeCallbacks(flashlightRelease)
+        for (action in heldActions.toList()) setHeldAction(action, false)
+        for (code in intArrayOf(KeyEvent.KEYCODE_E, KeyEvent.KEYCODE_SPACE, KeyEvent.KEYCODE_SHIFT_LEFT)) {
+            setOverlayKey(code, false)
+        }
+        watchState.clear()
+        crouchState.clear()
+        updateLatchButtons()
+        recordEvent("OYUN TUSLARI: birakildi ($reason)")
+    }
+
+    private fun releaseAllOverlayInputs(reason: String) {
+        releaseGameplayInputs(reason)
+        for (code in heldOverlayKeys.toList()) setOverlayKey(code, false)
+        setPrimaryMouse(false)
+    }
+
+    private fun showPhoneKeyboard(anchor: View) {
+        releaseGameplayInputs("KLAVYE")
+        // This is OpenTouch's own PORT_ACT_SHOW_KBRD -> SDL_StartTextInput,
+        // not merely an Android editor detached from SDL's text event stream.
+        SDLOpenTouch.fnafAction(1, ACT_SHOW_KEYBOARD)
+        recordEvent("KLAVYE: SDL metin girisi istendi")
+        anchor.postDelayed({
+            if (!isFinishing && !isDestroyed && !SDLActivity.isScreenKeyboardShown()) {
+                // Some IMEs dismiss the keyboard without clearing SDL's active
+                // flag; explicitly show the same SDL DummyEdit again in that case.
+                SDLActivity.showTextInput(0, 0, 1, 1)
+                recordEvent("KLAVYE: SDL gorunumu yeniden istendi")
+            }
+        }, 700L)
+    }
+
+    private fun saveLookDirections() {
+        getSharedPreferences("fnaf_controls_v7", Context.MODE_PRIVATE).edit()
+            .putBoolean("reverse_x", reverseLookX)
+            .putBoolean("reverse_y", reverseLookY)
+            .apply()
+    }
 
     private fun buildTouchOverlay() {
         val root = FrameLayout(this)
@@ -201,13 +310,22 @@ class Game : SDLActivity() {
                             val dy = e.getY(i) - lastY
                             lastX = e.getX(i)
                             lastY = e.getY(i)
-                            // Iki yol birden: motorun fare bakisi (SDL relative mouse)
-                            // ve analog birikimli bakis. Hangisini oyun kullanirsa.
-                            SDLActivity.onNativeMouse(0, MotionEvent.ACTION_MOVE, dx, dy, true)
-                            SDLOpenTouch.fnafLook(dy * 0.0016f, dx * 0.00055f)
+                            if (cursorMode) {
+                                // The character screen tracks a relative SDL mouse
+                                // cursor in-game; finger coordinates are not clicks.
+                                SDLActivity.onNativeMouse(0, MotionEvent.ACTION_MOVE, dx, dy, true)
+                            } else {
+                                // Both routes were reversed on the user's device.
+                                // Correct both, leaving the successful movement alone.
+                                val cameraX = orientCameraDelta(dx, reverseLookX)
+                                val cameraY = orientCameraDelta(dy, reverseLookY)
+                                SDLActivity.onNativeMouse(0, MotionEvent.ACTION_MOVE, cameraX, cameraY, true)
+                                SDLOpenTouch.fnafLook(cameraY * 0.0016f, cameraX * 0.00055f)
+                            }
                             val now = SystemClock.elapsedRealtime()
                             if (now - lastLogMs >= 300) {
-                                recordEvent("BAKIS: dx=${dx.toInt()} dy=${dy.toInt()} (SDL + analog)")
+                                val mode = if (cursorMode) "FARE" else "BAKIS"
+                                recordEvent("$mode: dx=${dx.toInt()} dy=${dy.toInt()}")
                                 lastLogMs = now
                             }
                         }
@@ -234,73 +352,88 @@ class Game : SDLActivity() {
         stick.layoutParams = FrameLayout.LayoutParams(dp(190), dp(190))
         place(root, stick, Gravity.BOTTOM or Gravity.START, left = 26, bottom = 30)
 
-        // 3) Sag butonlar: asagidan yukari AL, FENER, ZIPLA, EGIL, KOS.
-        val al = makeButton("AL", 84,
-            {
-                SDLOpenTouch.fnafAction(1, ACT_ATTACK)
-                SDLOpenTouch.fnafAction(1, ACT_USE)
-                SDLActivity.onNativeKeyDown(KeyEvent.KEYCODE_E)
-                SDLOpenTouch.fnafCommand("+attack")
-            },
-            {
-                SDLOpenTouch.fnafAction(0, ACT_ATTACK)
-                SDLOpenTouch.fnafAction(0, ACT_USE)
-                SDLActivity.onNativeKeyUp(KeyEvent.KEYCODE_E)
-                SDLOpenTouch.fnafCommand("-attack")
-            })
+        // 3) AL is E only: never send attack/flashlight from this button.
+        val (alDown, alUp) = keyTap(KeyEvent.KEYCODE_E)
+        val al = makeButton("AL", 84, alDown, alUp)
         place(root, al, Gravity.BOTTOM or Gravity.END, right = 30, bottom = 36)
 
-        val fener = makeButton("FENER", 70,
-            {
-                SDLOpenTouch.fnafAction(1, ACT_ALT_ATTACK)
-                SDLOpenTouch.fnafCommand("+altattack")
-            },
-            {
-                SDLOpenTouch.fnafAction(0, ACT_ALT_ATTACK)
-                SDLOpenTouch.fnafCommand("-altattack")
-            })
+        // The game's own Fire state toggles the flashlight on each short press.
+        val fener = makeButton("FENER", 70, { pulseFlashlight() }, {})
         place(root, fener, Gravity.BOTTOM or Gravity.END, right = 132, bottom = 36)
+
+        // Mouse2 is the game's watch. Keep alt-attack down until tapped again.
+        val saat = makeButton("SAAT", 70, {
+            val active = watchState.toggle()
+            setHeldAction(ACT_ALT_ATTACK, active)
+            updateLatchButtons()
+            recordEvent("SAAT: ${if (active) "ACIK" else "KAPALI"}")
+        }, {})
+        watchButton = saat
+        place(root, saat, Gravity.BOTTOM or Gravity.END, right = 214, bottom = 36)
 
         val zipla = makeButton("ZIPLA", 64,
             {
-                SDLOpenTouch.fnafAction(1, ACT_JUMP)
-                SDLActivity.onNativeKeyDown(KeyEvent.KEYCODE_SPACE)
+                setHeldAction(ACT_JUMP, true)
+                setOverlayKey(KeyEvent.KEYCODE_SPACE, true)
             },
             {
-                SDLOpenTouch.fnafAction(0, ACT_JUMP)
-                SDLActivity.onNativeKeyUp(KeyEvent.KEYCODE_SPACE)
+                setHeldAction(ACT_JUMP, false)
+                setOverlayKey(KeyEvent.KEYCODE_SPACE, false)
             })
         place(root, zipla, Gravity.BOTTOM or Gravity.END, right = 40, bottom = 140)
 
-        val egil = makeButton("EGIL", 64,
-            {
-                SDLOpenTouch.fnafAction(1, ACT_CROUCH)
-                SDLActivity.onNativeKeyDown(KeyEvent.KEYCODE_CTRL_LEFT)
-            },
-            {
-                SDLOpenTouch.fnafAction(0, ACT_CROUCH)
-                SDLActivity.onNativeKeyUp(KeyEvent.KEYCODE_CTRL_LEFT)
-            })
+        // Toggle the existing crouch action instead of requiring a long hold.
+        val egil = makeButton("EGIL", 64, {
+            val active = crouchState.toggle()
+            setHeldAction(ACT_CROUCH, active)
+            updateLatchButtons()
+            recordEvent("EGIL: ${if (active) "ACIK" else "KAPALI"}")
+        }, {})
+        crouchButton = egil
         place(root, egil, Gravity.BOTTOM or Gravity.END, right = 122, bottom = 128)
 
         val kos = makeButton("KOS", 64,
             {
-                SDLOpenTouch.fnafAction(1, ACT_SPEED)
-                SDLActivity.onNativeKeyDown(KeyEvent.KEYCODE_SHIFT_LEFT)
+                setHeldAction(ACT_SPEED, true)
+                setOverlayKey(KeyEvent.KEYCODE_SHIFT_LEFT, true)
             },
             {
-                SDLOpenTouch.fnafAction(0, ACT_SPEED)
-                SDLActivity.onNativeKeyUp(KeyEvent.KEYCODE_SHIFT_LEFT)
+                setHeldAction(ACT_SPEED, false)
+                setOverlayKey(KeyEvent.KEYCODE_SHIFT_LEFT, false)
             })
         place(root, kos, Gravity.BOTTOM or Gravity.END, right = 44, bottom = 224)
 
-        // 4) Ust sol: MENU (bilerek, tek yerden duraklatma).
-        val menu = makeButton("MENU", 58, { SDLOpenTouch.fnafMenu() }, {})
+        val click = makeButton("TIK", 84,
+            { setPrimaryMouse(true) }, { setPrimaryMouse(false) })
+        click.visibility = View.GONE
+        place(root, click, Gravity.BOTTOM or Gravity.END, right = 30, bottom = 36)
+        val gameplayControls = listOf<View>(stick, al, fener, saat, zipla, egil, kos)
+
+        // 4) Ust sol: only MENU deliberately sends back/escape.
+        val menu = makeButton("MENU", 58, {
+            releaseAllOverlayInputs("MENU")
+            SDLOpenTouch.fnafMenu()
+        }, {})
         place(root, menu, Gravity.TOP or Gravity.START, left = 18, top = 14)
 
-        // LOG yalnızca uygulama panelini açar; motora ESC/ENTER göndermez.
+        // LOG only opens an app panel; it does not send ESC/ENTER to the game.
         val logBtn = makeButton("LOG", 58, { openLogPanel() }, {})
         place(root, logBtn, Gravity.TOP or Gravity.START, left = 88, top = 14)
+
+        lateinit var mouseButton: TextView
+        mouseButton = makeButton("FARE", 58, {
+            cursorMode = !cursorMode
+            if (cursorMode) releaseGameplayInputs("FARE") else setPrimaryMouse(false)
+            gameplayControls.forEach { it.visibility = if (cursorMode) View.GONE else View.VISIBLE }
+            click.visibility = if (cursorMode) View.VISIBLE else View.GONE
+            mouseButton.text = if (cursorMode) "FARE\nACIK" else "FARE"
+            mouseButton.setTextColor(if (cursorMode) Color.YELLOW else Color.WHITE)
+            recordEvent("FARE MODU: ${if (cursorMode) "ACIK" else "KAPALI"}")
+        }, {})
+        place(root, mouseButton, Gravity.TOP or Gravity.START, left = 158, top = 14)
+
+        val keyboard = makeButton("KLAVYE", 58, { showPhoneKeyboard(root) }, {})
+        place(root, keyboard, Gravity.TOP or Gravity.START, left = 228, top = 14)
 
         // 5) Ust sag: menu gezintisi (ENTER / yukari / asagi).
         val (enterDown, enterUp) = keyTap(KeyEvent.KEYCODE_ENTER)
@@ -380,6 +513,20 @@ class Game : SDLActivity() {
             recordEvent("HAREKET MODU: ${if (analogMovementMode) "ANALOG" else "WASD"}")
             refreshLogPanel()
         }
+        addToolbarButton(if (reverseLookX) "BAKIS X: 1" else "BAKIS X: 2") { button ->
+            reverseLookX = !reverseLookX
+            button.text = if (reverseLookX) "BAKIS X: 1" else "BAKIS X: 2"
+            saveLookDirections()
+            recordEvent("BAKIS X: ${if (reverseLookX) 1 else 2}")
+            refreshLogPanel()
+        }
+        addToolbarButton(if (reverseLookY) "BAKIS Y: 1" else "BAKIS Y: 2") { button ->
+            reverseLookY = !reverseLookY
+            button.text = if (reverseLookY) "BAKIS Y: 1" else "BAKIS Y: 2"
+            saveLookDirections()
+            recordEvent("BAKIS Y: ${if (reverseLookY) 1 else 2}")
+            refreshLogPanel()
+        }
         addToolbarButton("KAPAT") {
             recordEvent("LOG: kapat")
             panel.visibility = View.GONE
@@ -450,6 +597,8 @@ class Game : SDLActivity() {
         appendLine("$buildMarker | v${BuildConfig.VERSION_NAME}")
         appendLine("Cihaz: ${Build.MANUFACTURER} ${Build.MODEL} | Android ${Build.VERSION.RELEASE}")
         appendLine("Hareket modu: ${if (analogMovementMode) "ANALOG" else "WASD"}")
+        appendLine("Fare: ${if (cursorMode) "ACIK" else "KAPALI"} | Bakis X: ${if (reverseLookX) 1 else 2} Y: ${if (reverseLookY) 1 else 2}")
+        appendLine("Saat: ${watchState.active} | Egil: ${crouchState.active}")
         appendLine("Kopru: ${SDLOpenTouch.fnafDebugInfo()}")
         appendLine("Deneme: Oyuna don, cubugu birkac saniye it, LOG > KOPYALA yap.")
         appendLine("MOD dugmesi ile WASD ve ANALOG ayri ayri denenebilir.")
@@ -616,10 +765,10 @@ class Game : SDLActivity() {
     companion object {
         // PORT_ACT kodlari (Clibs_OpenTouch/port_act_defs.h)
         private const val ACT_SPEED = 10
-        private const val ACT_USE = 11
         private const val ACT_JUMP = 12
         private const val ACT_ATTACK = 13
         private const val ACT_CROUCH = 15 // PORT_ACT_DOWN -> Button_Crouch
+        private const val ACT_SHOW_KEYBOARD = 26
         private const val ACT_ALT_ATTACK = 64
     }
 }
