@@ -37,3 +37,11 @@ javac -source 11 -target 11 -cp "$ANDROID_JAR:$T/fakes" -d "$T/java-android" "$T
 javac -source 11 -target 11 -cp "$T/fakes" -d "$T/fakes" "$T/SDLInputConnection.java" \
   "$ROOT/scripts/tests/SoftKeyboardHostTest.java"
 java -cp "$T/fakes" org.libsdl.app2012.SoftKeyboardHostTest
+# Also compile and exercise the real native-message handler. The Android jar
+# comes first at compile time; fake Android classes execute it on the host.
+mkdir -p "$T/bridge"
+javac -encoding UTF-8 -source 11 -target 11 -cp "$ANDROID_JAR:$T/fakes" -d "$T/bridge" \
+  "$ROOT/doom/src/main/java/org/libsdl/app/SDLOpenTouch.java"
+javac -encoding UTF-8 -source 11 -target 11 -cp "$T/bridge:$T/fakes" -d "$T/bridge" \
+  "$ROOT/scripts/tests/KeyboardBridgeHostTest.java"
+java -cp "$T/bridge:$T/fakes" org.libsdl.app.KeyboardBridgeHostTest

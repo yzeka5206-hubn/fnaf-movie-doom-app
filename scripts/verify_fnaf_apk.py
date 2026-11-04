@@ -13,6 +13,7 @@ REQUIRED_DEX_MARKERS = (
     b"0.7.0-kontroller",
     b"LatchingSwitch",
     b"forwardSoftEnter",
+    b"FNAF_SYSTEM_KEYBOARD_V7",
     b"KLAVYE",
     b"FARE",
     b"SAAT",

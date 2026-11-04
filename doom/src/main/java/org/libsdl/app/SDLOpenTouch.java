@@ -158,6 +158,9 @@ public class SDLOpenTouch
         // kullanilacak. Hazir duzen ara sahnelerde ekrana USE+ENTER gonderip
         // ana menuyu aciyordu.
         options |= 0x2; // GAME_OPTION_HIDE_MENU_AND_GAME
+        // SDL's OpenTouch callback otherwise enables the port's own overlay
+        // keyboard, which consumes gamepad actions. Request Android's IME.
+        options |= 0x4; // GAME_OPTION_USE_SYSTEM_KEYBOARD
 
         int gameType = 1; // GAME_TYPE_DOOM
         int wheelNbr = 10;
@@ -336,6 +339,7 @@ public class SDLOpenTouch
     // when the engine terminates; the process must die so the next launch
     // starts with clean native state.
     static final int COMMAND_EXIT_APP = 0x8007;
+    static final int COMMAND_SHOW_KEYBOARD = 0x8003;
 
     // Sent by the native vibrate channel (TouchInterfaceBase::vibrate and the
     // fire/hit haptic hooks). msg.obj is the Integer duration in milliseconds.
@@ -343,6 +347,14 @@ public class SDLOpenTouch
 
     public static boolean CommandHandler(Activity activity, Message msg)
     {
+        if (msg.arg1 == COMMAND_SHOW_KEYBOARD)
+        {
+            // SDL_StartTextInput enables SDL text events; the native callback
+            // asks us to show the SDL DummyEdit attached to Android's IME.
+            Log.v(TAG, "FNAF_SYSTEM_KEYBOARD_V7");
+            org.libsdl.app2012.SDLActivity.showTextInput(0, 0, 1, 1);
+            return true;
+        }
         if (msg.arg1 == COMMAND_EXIT_APP)
         {
             Log.v(TAG, "COMMAND_EXIT_APP: finishing");
