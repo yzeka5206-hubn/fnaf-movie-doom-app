@@ -127,13 +127,22 @@ printf '=== Tapping installed-APK preparation button at %s,%s ===\n' "$X" "$Y"
 # MediaStore output instead, then verify its bytes and signature below.
 if ! python3 - "$ADB" <<'PYPUBLISHED'
 import subprocess,sys,time
-adb=sys.argv[1]; end=time.monotonic()+90
+adb=sys.argv[1]; start=time.monotonic(); end=start+300; sampled=set()
 while time.monotonic()<end:
  result=subprocess.run([adb,'shell','test','-f','/sdcard/Download/FNAF_Ayar_Model_Test.apk'], stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
  if result.returncode==0:
-  print('Published output detected');break
+  print('Published output detected after',round(time.monotonic()-start),'seconds',flush=True);break
+ elapsed=time.monotonic()-start
+ for mark in (30,120,240):
+  if elapsed>=mark and mark not in sampled:
+   sampled.add(mark); print('=== updater diagnosis at',mark,'seconds ===',flush=True)
+   subprocess.run([adb,'shell','run-as','com.fnaf.moviedoom.modelpatch','ls','-la','/sdcard/Download'],timeout=20,check=False)
+   pid=subprocess.run([adb,'shell','pidof','com.fnaf.moviedoom.modelpatch'],capture_output=True,text=True,timeout=10).stdout.strip()
+   if pid:
+    try: subprocess.run([adb,'shell','debuggerd','-b',pid],timeout=20,check=False)
+    except subprocess.TimeoutExpired: print('debuggerd timed out',flush=True)
  time.sleep(2)
-else: raise SystemExit('No published APK after 90 seconds')
+else: raise SystemExit('No published APK after 300 seconds')
 PYPUBLISHED
 then
   echo 'Updater did not publish the target file'
