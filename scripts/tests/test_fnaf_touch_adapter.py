@@ -22,8 +22,10 @@ class TouchAdapterTests(unittest.TestCase):
             self.assertIn('FnafHandleTouch(e.Args[0], e.Args[1], e.Args[2])', script)
             self.assertIn('EventHandler.SendNetworkEvent("NetMouse", nx, ny)', script)
             self.assertIn('EventHandler.SendNetworkEvent("NetClick")', script)
-            self.assertIn('current.MouseEvent(Menu.MOUSE_Click, x, y)', script)
-            self.assertIn('current.MenuEvent(Menu.MKEY_Back, true)', script)
+            self.assertNotIn('.MouseEvent(', script)
+            self.assertNotIn('.MenuEvent(', script)
+            self.assertIn('FnafTouchAck', script)
+            self.assertIn('fnafMouseGuard', script)
             self.assertNotIn('FNAF_AUTOTEST', script)
             self.assertNotIn('REAL_SELECTION_', script)
 

@@ -11,11 +11,47 @@ internal fun fnafTouchCoordinate(position: Float, extent: Int): Int {
     return ((position / extent.toFloat()).coerceIn(0f, 1f) * 65535f).roundToInt()
 }
 
+/** Android view pixels -> actual SDL surface pixels; the engine then handles letterboxing. */
+internal fun fnafSurfaceCoordinate(position: Float, viewExtent: Int, surfaceExtent: Int): Float {
+    if (viewExtent <= 0 || !position.isFinite()) return 0f
+    val extent = if (surfaceExtent > 0) surfaceExtent else viewExtent
+    return ((position / viewExtent.toFloat()).coerceIn(0f, 1f) * extent)
+        .coerceAtMost((extent - 1).coerceAtLeast(0).toFloat())
+}
+
+/** Back arrow's rectangle in the engine's logical screen coordinates. */
+internal data class FnafBackBounds(
+    val x: Int, val y: Int, val width: Int, val height: Int,
+    val screenWidth: Int, val screenHeight: Int,
+) {
+    fun contains(viewX: Float, viewY: Float, viewWidth: Int, viewHeight: Int,
+                 surfaceWidth: Int, surfaceHeight: Int): Boolean {
+        if (width <= 0 || height <= 0 || screenWidth <= 0 || screenHeight <= 0 ||
+            viewWidth <= 0 || viewHeight <= 0 || !viewX.isFinite() || !viewY.isFinite()) return false
+        val sw = if (surfaceWidth > 0) surfaceWidth.toFloat() else viewWidth.toFloat()
+        val sh = if (surfaceHeight > 0) surfaceHeight.toFloat() else viewHeight.toFloat()
+        // UZDoom's output fits the logical screen into the surface, centered.
+        val scale = minOf(sw / screenWidth, sh / screenHeight)
+        if (scale <= 0f) return false
+        val left = (sw - screenWidth * scale) / 2f
+        val top = (sh - screenHeight * scale) / 2f
+        val screenX = (viewX / viewWidth * sw - left) / scale
+        val screenY = (viewY / viewHeight * sh - top) / scale
+        // A small safety margin prevents rounding at the edge from accidentally
+        // sending a normal left-click through the engine's broken arrow path.
+        val margin = 2f
+        return screenX >= x - margin && screenX < x + width + margin &&
+            screenY >= y - margin && screenY < y + height + margin
+    }
+}
+
 /** Read only this launch's state markers, tolerating partial writes/truncation. */
 internal class FnafUiStateReader(private val file: File, private val session: Int) {
     private var offset = 0L
     private var partial = ""
     private val marker = "FNAF_TOUCH_STATE:$session:"
+    var backBounds: FnafBackBounds? = null
+        private set
 
     fun poll(): Int? {
         return try {
@@ -36,8 +72,19 @@ internal class FnafUiStateReader(private val file: File, private val session: In
                 for (line in lines.dropLast(1)) {
                     val index = line.indexOf(marker)
                     if (index < 0) continue
-                    val mode = line.substring(index + marker.length).trim().toIntOrNull()
-                    if (mode != null && mode in 0..2) newest = mode
+                    val parts = line.substring(index + marker.length).trim().split(':')
+                    val mode = parts.firstOrNull()?.toIntOrNull()
+                    if (mode != null && mode in 0..2) {
+                        newest = mode
+                        val values = parts.drop(1).map { it.toIntOrNull() }
+                        backBounds = if (mode == 2 && values.size == 6 && values.all { it != null }) {
+                            val v = values.map { it!! }
+                            if (v[0] >= 0 && v[1] >= 0 && v[2] >= 0 && v[3] >= 0 &&
+                                v[4] > 0 && v[5] > 0 && v[0] + v[2] <= v[4] && v[1] + v[3] <= v[5])
+                                FnafBackBounds(v[0], v[1], v[2], v[3], v[4], v[5])
+                            else null
+                        } else null
+                    }
                 }
                 newest
             }

@@ -75,7 +75,8 @@ object Utils {
         copyGameAsset(responsibleActivity, "game/FNAFMovie.ipk3", fullBaseDir)
         copyGameAsset(responsibleActivity, "game/FiveNightsAtFreddysDoomMOVIE.wad", fullModDir)
         copyGameAsset(responsibleActivity, "game/FiveNightsAtFreddysDoomMOVIE.pk3", fullModDir)
-        copyTouchAdapter(responsibleActivity, fullModDir)
+        copyBundledAddon(responsibleActivity, fullModDir, "fnaf-touch-v1.pk3")
+        copyBundledAddon(responsibleActivity, fullModDir, "fnaf-model-static-v1.pk3")
         // This optional addon is not bundled in every build. Its absence must
         // not stop a fresh install from launching the required movie packages.
         if (responsibleActivity.assets.list("game")?.contains("camera_move.pk3") == true) {
@@ -83,17 +84,19 @@ object Utils {
         }
     }
 
+    /** Always refresh small bundled addons on update; preserve a complete previous
+     * copy if extraction fails, and only replace it after the new copy closes. */
     @Throws(IOException::class)
-    private fun copyTouchAdapter(ctx: Context, destdir: String) {
+    private fun copyBundledAddon(ctx: Context, destdir: String, name: String) {
         val dir = File(destdir)
         dir.mkdirs()
-        val target = File(dir, "fnaf-touch-v1.pk3")
-        val tmp = File(dir, ".fnaf-touch-v1.tmp")
+        val target = File(dir, name)
+        val tmp = File(dir, ".$name.tmp")
         try {
-            ctx.assets.open("game/fnaf-touch-v1.pk3").use { input ->
+            ctx.assets.open("game/$name").use { input ->
                 FileOutputStream(tmp).use { out -> copyFile(input, out) }
             }
-            if (!tmp.renameTo(target)) throw IOException("Dokunma dosyası hazırlanamadı")
+            if (!tmp.renameTo(target)) throw IOException("Oyun eklentisi hazırlanamadı: $name")
         } finally {
             if (tmp.exists()) tmp.delete()
         }

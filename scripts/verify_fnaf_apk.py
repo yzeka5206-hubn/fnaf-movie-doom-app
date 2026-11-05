@@ -21,6 +21,7 @@ REQUIRED_DEX_MARKERS = (
     b"KLAVYE",
     b"FnafUiStateReader",
     b"FnafTouchPing",
+    b"fnaf-model-static-v1.pk3",
     b"fnafCommitText",
     b"SAAT",
     b"KOS",
@@ -30,6 +31,7 @@ ASSETS = {
     "assets/game/FiveNightsAtFreddysDoomMOVIE.wad": (10_000_000, b"PWAD"),
     "assets/game/FiveNightsAtFreddysDoomMOVIE.pk3": (100_000_000, b"PK\x03\x04"),
     "assets/game/fnaf-touch-v1.pk3": (500, b"PK\x03\x04"),
+    "assets/game/fnaf-model-static-v1.pk3": (1_000_000, b"PK\x03\x04"),
 }
 
 

@@ -47,6 +47,13 @@ public class SDLOpenTouch
     static int fbHeight = 0;
     static int renderWidth = 0;
     static int renderHeight = 0;
+    // SDL mouse coordinates are in the surface/window buffer, not necessarily
+    // the Android view size when res_div uses SurfaceHolder.setFixedSize().
+    private static volatile int fnafSurfaceWidth = 0;
+    private static volatile int fnafSurfaceHeight = 0;
+
+    public static int fnafSurfaceWidth() { return fnafSurfaceWidth; }
+    public static int fnafSurfaceHeight() { return fnafSurfaceHeight; }
 
     public static boolean swapMouseXY = false;
     public static boolean invertMouseX = false;
@@ -237,6 +244,8 @@ public class SDLOpenTouch
             return true;
         }
 
+        fnafSurfaceWidth = width;
+        fnafSurfaceHeight = height;
         NativeLib.setScreenSize(width, height);
 
         if (controlInterp != null)

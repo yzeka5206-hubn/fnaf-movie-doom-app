@@ -33,6 +33,7 @@ import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.TimeUnit
 import org.libsdl.app.SDLOpenTouch
 import org.libsdl.app2012.SDLActivity
+import kotlin.math.abs
 import kotlin.math.hypot
 import kotlin.math.min
 import kotlin.random.Random
@@ -79,6 +80,7 @@ class Game : SDLActivity() {
     private var gameplayControls: List<View> = emptyList()
     private var utilityControls: List<View> = emptyList()
     private var uiMode = 0 // 0 gameplay, 1 character selector, 2 engine menu
+    private var menuBackBounds: FnafBackBounds? = null
     private val uiSession = Random.nextInt(1, Int.MAX_VALUE)
     @Volatile private var monitorRunning = false
     private var uiMonitor: ScheduledExecutorService? = null
@@ -87,6 +89,12 @@ class Game : SDLActivity() {
     private val heldOverlayKeys = mutableSetOf<Int>()
     private val heldActions = mutableSetOf<Int>()
     private val inputHandler = Handler(Looper.getMainLooper())
+    private var menuMouseHeld = false
+    private var menuMouseButton = 0
+    private var menuMouseDownAt = 0L
+    private var menuMouseX = 0f
+    private var menuMouseY = 0f
+    private val menuMouseRelease = Runnable { releaseMenuMouse() }
     private val flashlightRelease = Runnable {
         setHeldAction(ACT_ATTACK, false)
         recordEvent("FENER: tek atim tamamlandi")
@@ -272,6 +280,7 @@ class Game : SDLActivity() {
 
     private fun releaseAllOverlayInputs(reason: String) {
         releaseGameplayInputs(reason)
+        releaseMenuMouse()
         for (code in heldOverlayKeys.toList()) setOverlayKey(code, false)
     }
 
@@ -293,8 +302,9 @@ class Game : SDLActivity() {
                         lastPing = now
                     }
                     val mode = reader.poll()
+                    val backBounds = reader.backBounds
                     if (mode != null) inputHandler.post {
-                        if (monitorRunning && !isFinishing && !isDestroyed) setGameUiMode(mode)
+                        if (monitorRunning && !isFinishing && !isDestroyed) setGameUiMode(mode, backBounds)
                     }
                 }
             } catch (_: Exception) {
@@ -305,12 +315,29 @@ class Game : SDLActivity() {
         }, 0L, 150L, TimeUnit.MILLISECONDS)
     }
 
-    private fun setGameUiMode(mode: Int) {
-        if (mode !in 0..2 || mode == uiMode) return
-        uiMode = mode
-        if (mode != 0) releaseGameplayInputs("OYUN MENUSU")
-        updateControlsVisibility()
-        recordEvent("DOKUNMA EKRANI: $mode")
+    private fun setGameUiMode(mode: Int, backBounds: FnafBackBounds? = null) {
+        if (mode !in 0..2) return
+        menuBackBounds = if (mode == 2) backBounds else null
+        if (mode != uiMode) {
+            val previous = uiMode
+            uiMode = mode
+            if (previous == 2 && mode != 2) releaseMenuMouse()
+            if (mode != 0) releaseGameplayInputs("OYUN MENUSU")
+            updateControlsVisibility()
+            recordEvent("DOKUNMA EKRANI: $mode")
+        }
+        if (mode == 0 && SDLOpenTouch.fnafCanQueryEngine()) {
+            // The engine suppresses menu mouse presses until the overlay has
+            // observed gameplay; commands are FIFO and checked against its
+            // actual current mode, so a stale acknowledgement is harmless.
+            try {
+                SDLOpenTouch.fnafCommand("interfaceevent FnafTouchAck $uiSession 0")
+            } catch (_: Exception) {
+                recordEvent("DOKUNMA KOPRUSU: motor kullanilamiyor")
+            } catch (_: LinkageError) {
+                recordEvent("DOKUNMA KOPRUSU: motor kapandi")
+            }
+        }
     }
 
     private fun updateControlsVisibility() {
@@ -329,6 +356,65 @@ class Game : SDLActivity() {
         } catch (_: LinkageError) {
             recordEvent("DOKUNMA KOPRUSU: motor kapandi")
         }
+    }
+
+    private fun surfaceX(x: Float, width: Int): Float =
+        fnafSurfaceCoordinate(x, width, SDLOpenTouch.fnafSurfaceWidth())
+
+    private fun surfaceY(y: Float, height: Int): Float =
+        fnafSurfaceCoordinate(y, height, SDLOpenTouch.fnafSurfaceHeight())
+
+    private fun beginMenuMouse(x: Float, y: Float, width: Int, height: Int, button: Int = 1) {
+        if (!SDLOpenTouch.fnafCanQueryEngine()) return
+        releaseMenuMouse()
+        menuMouseX = surfaceX(x, width)
+        menuMouseY = surfaceY(y, height)
+        menuMouseHeld = true
+        menuMouseButton = button
+        menuMouseDownAt = SystemClock.elapsedRealtime()
+        // SDL mouse events enter the real engine responder. Its menu security
+        // context allows CVar changes (gamma, quality, etc.) without a VM abort.
+        SDLActivity.onNativeMouse(button, MotionEvent.ACTION_DOWN, menuMouseX, menuMouseY, false)
+    }
+
+    private fun moveMenuMouse(x: Float, y: Float, width: Int, height: Int) {
+        if (!menuMouseHeld) return
+        menuMouseX = surfaceX(x, width)
+        menuMouseY = surfaceY(y, height)
+        SDLActivity.onNativeMouse(menuMouseButton, MotionEvent.ACTION_MOVE, menuMouseX, menuMouseY, false)
+    }
+
+    private fun endMenuMouse(cancel: Boolean, x: Float, y: Float, width: Int, height: Int) {
+        if (!menuMouseHeld) return
+        moveMenuMouse(x, y, width, height)
+        inputHandler.removeCallbacks(menuMouseRelease)
+        val elapsed = SystemClock.elapsedRealtime() - menuMouseDownAt
+        if (cancel || elapsed >= 100L) releaseMenuMouse()
+        else inputHandler.postDelayed(menuMouseRelease, 100L - elapsed)
+    }
+
+    private fun releaseMenuMouse() {
+        inputHandler.removeCallbacks(menuMouseRelease)
+        if (!menuMouseHeld) return
+        menuMouseHeld = false
+        menuMouseButton = 0
+        SDLActivity.onNativeMouse(0, MotionEvent.ACTION_UP, menuMouseX, menuMouseY, false)
+    }
+
+    private fun menuBackAt(x: Float, y: Float, width: Int, height: Int): Boolean {
+        val bounds = menuBackBounds
+        if (bounds != null) return bounds.contains(x, y, width, height,
+            SDLOpenTouch.fnafSurfaceWidth(), SDLOpenTouch.fnafSurfaceHeight())
+        // If the log line has not supplied geometry, fail safely at the corners.
+        // An ordinary tap elsewhere remains usable; a missing arrow cannot cause
+        // the engine's null-menu mouse-release bug.
+        val edge = dp(48).toFloat()
+        return (x < edge || x >= width - edge) && (y < edge || y >= height - edge)
+    }
+
+    private fun scrollMenu(direction: Float) {
+        if (SDLOpenTouch.fnafCanQueryEngine())
+            SDLActivity.onNativeMouse(0, MotionEvent.ACTION_SCROLL, 0f, direction, false)
     }
 
     private fun setKeyboardOpen(open: Boolean) {
@@ -354,7 +440,9 @@ class Game : SDLActivity() {
     private fun buildTouchOverlay() {
         val root = FrameLayout(this)
 
-        // Full-screen look area automatically becomes direct touch on menus.
+        // Character selection keeps its original ACS bridge. Engine menus
+        // use SDL GUI input instead, so the engine performs all menu actions
+        // inside its own protected menu context.
         val look = object : View(this) {
             private var pid = -1
             private var lastX = 0f
@@ -362,20 +450,73 @@ class Game : SDLActivity() {
             private var startX = 0f
             private var startY = 0f
             private var moved = false
-            private var menuGesture = false
+            private var gestureMode = 0
+            private var menuKind = 0 // 0 undecided/tap, 1 horizontal drag, 2 vertical scroll
+            private var backGesture = false
+            private var scrollY = 0f
             private var lastSendMs = 0L
             private var lastLogMs = 0L
 
             private fun finish(cancel: Boolean, x: Float, y: Float) {
                 if (pid < 0) return
-                if (menuGesture) {
-                    sendDirectTouch(x, y, width, height, if (cancel) 3 else 2)
-                } else if (!cancel && !moved) {
-                    // The adapter checks the current screen; gameplay gets no click.
-                    sendDirectTouch(x, y, width, height, 0)
-                    sendDirectTouch(x, y, width, height, 2)
+                when (gestureMode) {
+                    1 -> sendDirectTouch(x, y, width, height, if (cancel) 3 else 2)
+                    2 -> {
+                        if (backGesture) {
+                            if (!cancel && uiMode == 2 && menuBackAt(x, y, width, height)) {
+                                // SDL X1 is the engine's GUI back event. Calling
+                                // the drawn arrow as a left click can fall through
+                                // to an option item after the menu has closed.
+                                beginMenuMouse(x, y, width, height, 16) // Android BUTTON_FORWARD -> SDL X1
+                                endMenuMouse(false, x, y, width, height)
+                            }
+                        } else if (menuKind == 1) endMenuMouse(cancel, x, y, width, height)
+                        else if (menuKind == 0 && !cancel && uiMode == 2) {
+                            // Defer a tap's down event until release, so a
+                            // vertical swipe can scroll without activating a row.
+                            beginMenuMouse(x, y, width, height)
+                            endMenuMouse(false, x, y, width, height)
+                        }
+                    }
+                    else -> if (!cancel && !moved) {
+                        // Covers the short state-monitor delay when the game's
+                        // character selector has just opened; gameplay ignores it.
+                        sendDirectTouch(x, y, width, height, 0)
+                        sendDirectTouch(x, y, width, height, 2)
+                    }
                 }
                 pid = -1
+            }
+
+            private fun dragOrScrollMenu(x: Float, y: Float, now: Long) {
+                if (uiMode != 2) return
+                val dx = x - startX
+                val dy = y - startY
+                if (menuKind == 0 && maxOf(abs(dx), abs(dy)) >= dp(10)) {
+                    if (abs(dx) >= abs(dy)) {
+                        menuKind = 1
+                        beginMenuMouse(startX, startY, width, height)
+                        moveMenuMouse(x, y, width, height)
+                        lastSendMs = now
+                    } else {
+                        menuKind = 2
+                        scrollY = startY
+                    }
+                }
+                if (menuKind == 1 && now - lastSendMs >= 35L) {
+                    moveMenuMouse(x, y, width, height)
+                    lastSendMs = now
+                } else if (menuKind == 2) {
+                    val step = dp(20).coerceAtLeast(1).toFloat()
+                    var remaining = y - scrollY
+                    var count = 0
+                    while (abs(remaining) >= step && count++ < 8) {
+                        val direction = if (remaining > 0) 1f else -1f
+                        scrollMenu(direction)
+                        scrollY += direction * step
+                        remaining = y - scrollY
+                    }
+                }
             }
 
             override fun onTouchEvent(e: MotionEvent): Boolean {
@@ -385,9 +526,14 @@ class Game : SDLActivity() {
                         startX = e.x; startY = e.y
                         lastX = e.x; lastY = e.y
                         moved = false
-                        menuGesture = uiMode != 0
+                        gestureMode = uiMode
+                        menuKind = 0
+                        backGesture = gestureMode == 2 && menuBackAt(e.x, e.y, width, height)
                         lastSendMs = SystemClock.elapsedRealtime()
-                        if (menuGesture) sendDirectTouch(e.x, e.y, width, height, 0)
+                        when (gestureMode) {
+                            1 -> sendDirectTouch(e.x, e.y, width, height, 0)
+                            2 -> releaseMenuMouse()
+                        }
                     }
                     MotionEvent.ACTION_POINTER_DOWN -> Unit
                     MotionEvent.ACTION_MOVE -> {
@@ -398,20 +544,22 @@ class Game : SDLActivity() {
                             lastX = x; lastY = y
                             if (hypot(x - startX, y - startY) > dp(8)) moved = true
                             val now = SystemClock.elapsedRealtime()
-                            if (menuGesture) {
-                                if (now - lastSendMs >= 35L) {
+                            when (gestureMode) {
+                                1 -> if (now - lastSendMs >= 35L) {
                                     sendDirectTouch(x, y, width, height, 1)
                                     lastSendMs = now
                                 }
-                            } else {
-                                // Preserve the existing camera/axis fixes.
-                                val cameraX = orientCameraDelta(dx, reverseLookX)
-                                val cameraY = orientCameraDelta(dy, reverseLookY)
-                                SDLActivity.onNativeMouse(0, MotionEvent.ACTION_MOVE, cameraX, cameraY, true)
-                                SDLOpenTouch.fnafLook(cameraY * 0.0016f, cameraX * 0.00055f)
-                                if (now - lastLogMs >= 300) {
-                                    recordEvent("BAKIS: dx=${dx.toInt()} dy=${dy.toInt()}")
-                                    lastLogMs = now
+                                2 -> if (!backGesture) dragOrScrollMenu(x, y, now)
+                                else -> {
+                                    // Preserve the existing camera/axis fixes.
+                                    val cameraX = orientCameraDelta(dx, reverseLookX)
+                                    val cameraY = orientCameraDelta(dy, reverseLookY)
+                                    SDLActivity.onNativeMouse(0, MotionEvent.ACTION_MOVE, cameraX, cameraY, true)
+                                    SDLOpenTouch.fnafLook(cameraY * 0.0016f, cameraX * 0.00055f)
+                                    if (now - lastLogMs >= 300) {
+                                        recordEvent("BAKIS: dx=${dx.toInt()} dy=${dy.toInt()}")
+                                        lastLogMs = now
+                                    }
                                 }
                             }
                         }

@@ -8,33 +8,16 @@ class FnafDirectTouchHandler : StaticEventHandler
     ui int fnafLastMode;
     ui bool fnafPublished;
     ui int fnafClickTicks;
-    ui Menu fnafCapturedMenu;
-    ui bool fnafCapturedBack;
-
-    ui void FnafReleaseCapture()
-    {
-        if (fnafCapturedMenu)
-        {
-            fnafCapturedMenu.mBackbuttonSelected = false;
-            fnafCapturedMenu.SetCapture(false);
-        }
-        fnafCapturedMenu = null;
-        fnafCapturedBack = false;
-    }
-
-    // Menu.MouseEventBack is protected: replicate its hit test.
-    ui bool FnafBackAt(int x, int y)
-    {
-        if (m_show_backbutton < 0) return false;
-        let tex = TexMan.CheckForTexture(gameinfo.mBackButton, TexMan.Type_MiscPatch);
-        if (!tex.IsValid()) return false;
-        Vector2 size = TexMan.GetScaledSize(tex);
-        int w = int(size.x + 0.5) * CleanXfac;
-        int h = int(size.y + 0.5) * CleanYfac;
-        if (m_show_backbutton & 1) x -= screen.GetWidth() - w;
-        if (m_show_backbutton & 2) y -= screen.GetHeight() - h;
-        return x >= 0 && x < w && y >= 0 && y < h;
-    }
+    // Keep synthetic menu mouse events out of gameplay until Android has
+    // acknowledged the current gameplay state. The overlay may learn about
+    // a closed menu a fraction of a second after the engine itself.
+    ui bool fnafMouseGuard;
+    ui int fnafBackX;
+    ui int fnafBackY;
+    ui int fnafBackW;
+    ui int fnafBackH;
+    ui int fnafScreenW;
+    ui int fnafScreenH;
 
     ui MouseDriverHandler FnafDriver()
     {
@@ -53,10 +36,35 @@ class FnafDirectTouchHandler : StaticEventHandler
     ui void FnafPublishMode(bool force)
     {
         int mode = FnafMode();
-        if (fnafSession && (force || !fnafPublished || fnafLastMode != mode))
+        int x = 0, y = 0, w = 0, h = 0, sw = 0, sh = 0;
+        if (mode == 2)
         {
-            Console.PrintfEx(PRINT_LOG, "FNAF_TOUCH_STATE:%d:%d", fnafSession, mode);
+            sw = screen.GetWidth();
+            sh = screen.GetHeight();
+            if (m_show_backbutton >= 0)
+            {
+                let tex = TexMan.CheckForTexture(gameinfo.mBackButton, TexMan.Type_MiscPatch);
+                if (tex.IsValid())
+                {
+                    Vector2 size = TexMan.GetScaledSize(tex);
+                    w = int(size.x + 0.5) * CleanXfac;
+                    h = int(size.y + 0.5) * CleanYfac;
+                    x = (m_show_backbutton & 1) ? sw - w : 0;
+                    y = (m_show_backbutton & 2) ? sh - h : 0;
+                }
+            }
+        }
+        if (fnafSession && (force || !fnafPublished || fnafLastMode != mode ||
+            fnafBackX != x || fnafBackY != y || fnafBackW != w || fnafBackH != h ||
+            fnafScreenW != sw || fnafScreenH != sh))
+        {
+            // Include the engine's exact back-button bounds in screen space.
+            // Android maps them through the letterbox before intercepting taps.
+            Console.PrintfEx(PRINT_LOG, "FNAF_TOUCH_STATE:%d:%d:%d:%d:%d:%d:%d:%d",
+                fnafSession, mode, x, y, w, h, sw, sh);
             fnafLastMode = mode;
+            fnafBackX = x; fnafBackY = y; fnafBackW = w; fnafBackH = h;
+            fnafScreenW = sw; fnafScreenH = sh;
             fnafPublished = true;
         }
     }
@@ -64,9 +72,11 @@ class FnafDirectTouchHandler : StaticEventHandler
     override void UiTick()
     {
         FnafPublishMode(false);
-        if (FnafMode() == 2) BackbuttonTime = 4 * GameTicRate;
-        if (fnafCapturedMenu && (FnafMode() != 2 || Menu.GetCurrentMenu() != fnafCapturedMenu))
-            FnafReleaseCapture();
+        if (FnafMode() == 2)
+        {
+            BackbuttonTime = 4 * GameTicRate;
+            fnafMouseGuard = true;
+        }
         if (fnafClickTicks > 0)
         {
             if (FnafMode() != 1) fnafClickTicks = 0;
@@ -84,6 +94,12 @@ class FnafDirectTouchHandler : StaticEventHandler
         {
             fnafSession = e.Args[0];
             FnafPublishMode(true);
+            return;
+        }
+        if (e.Name ~== "FnafTouchAck")
+        {
+            if (e.Args[0] == fnafSession && fnafSession && e.Args[1] == 0 && FnafMode() == 0)
+                fnafMouseGuard = false;
             return;
         }
         if (!(e.Name ~== "FnafTouch")) return;
@@ -109,42 +125,18 @@ class FnafDirectTouchHandler : StaticEventHandler
             return;
         }
 
-        if (mode == 2 && (menuactive == Menu.On || menuactive == Menu.OnNoPause))
-        {
-            let current = Menu.GetCurrentMenu();
-            if (!current) return;
-            int x = int(double(nx) * screen.GetWidth() / 65535.0);
-            int y = int(double(ny) * screen.GetHeight() / 65535.0);
-            if (phase == 0)
-            {
-                FnafReleaseCapture();
-                fnafCapturedMenu = current;
-                fnafCapturedBack = FnafBackAt(x, y);
-                if (fnafCapturedBack)
-                {
-                    current.mBackbuttonSelected = true;
-                    current.SetCapture(true);
-                }
-                else if (current.MouseEvent(Menu.MOUSE_Click, x, y) && current == Menu.GetCurrentMenu())
-                    current.SetCapture(true);
-            }
-            else if (phase == 1 && fnafCapturedMenu == current)
-            {
-                if (fnafCapturedBack) current.mBackbuttonSelected = FnafBackAt(x, y);
-                else current.MouseEvent(Menu.MOUSE_Move, x, y);
-            }
-            else if ((phase == 2 || phase == 3) && fnafCapturedMenu == current)
-            {
-                bool goBack = fnafCapturedBack && FnafBackAt(x, y);
-                bool wasBack = fnafCapturedBack;
-                FnafReleaseCapture();
-                if (phase == 2)
-                {
-                    if (goBack) current.MenuEvent(Menu.MKEY_Back, true);
-                    else if (!wasBack) current.MouseEvent(Menu.MOUSE_Release, x, y);
-                }
-            }
-        }
-        else if (phase == 2 || phase == 3) FnafReleaseCapture();
+    }
+
+    override bool InputProcess(InputEvent e)
+    {
+        // Only relevant during a menu-to-game transition. Ordinary gameplay
+        // and hardware mice regain their bindings after Android acknowledges.
+        if (fnafMouseGuard && FnafMode() != 2 &&
+            (e.Type == InputEvent.Type_KeyDown || e.Type == InputEvent.Type_KeyUp) &&
+            (e.KeyScan == InputEvent.Key_Mouse1 || e.KeyScan == InputEvent.Key_Mouse4 ||
+             e.KeyScan == InputEvent.Key_MWheelUp ||
+             e.KeyScan == InputEvent.Key_MWheelDown))
+            return true;
+        return false;
     }
 }
