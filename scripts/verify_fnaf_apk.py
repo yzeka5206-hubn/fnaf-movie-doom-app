@@ -10,7 +10,10 @@ from pathlib import Path
 BUILD_MARKER = b"FNAF_DIAG_V7_2026"
 REQUIRED_DEX_MARKERS = (
     BUILD_MARKER,
-    b"0.7.0-kontroller",
+    b"0.8.0-menu",
+    b"FnafMenuActivity",
+    b"FnafOptionsActivity",
+    b"OYUN HAZIRLANIYOR",
     b"LatchingSwitch",
     b"forwardSoftEnter",
     b"FNAF_SYSTEM_KEYBOARD_V7",
@@ -67,7 +70,7 @@ def main() -> int:
                 digest.update(chunk)
         checksum = apk.with_name(apk.name + ".sha256")
         checksum.write_text(f"{digest.hexdigest()}  {apk.name}\n", encoding="utf-8")
-        print(f"Verified {apk.name}: v7 controls markers and all three real game assets present")
+        print(f"Verified {apk.name}: v8 native menu, v7 control markers and all three real game assets present")
         for name, size in sizes.items():
             print(f"  {name}: {size} bytes")
         print(f"SHA-256: {digest.hexdigest()}")

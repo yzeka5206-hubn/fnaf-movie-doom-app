@@ -12,8 +12,8 @@ android {
         applicationId = "com.fnaf.moviedoom"
         minSdk = 33
         targetSdk = 36
-        versionCode = 8
-        versionName = "0.7.0-kontroller"
+        versionCode = 9
+        versionName = "0.8.0-menu"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

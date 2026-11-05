@@ -9,7 +9,7 @@
     <string name="ok_confirm">Tamam</string>
 
     <!-- gzdoom (freedoom) fragment-->
-    <string name="app_name">freedoom</string>
+    <string name="app_name">FNAF Movie Doom</string>
     <string name="start_full">Başlatmak</string>
     <string name="start_wads">Eklentileri</string>
     <!-- gamepad fragment -->
@@ -66,9 +66,9 @@
     <string name="use_option">Kullanım / Aç</string>
 
     <!-- options fragment -->
-    <string name="folder_name_prompt">Freedoom Klasörü</string>
+    <string name="folder_name_prompt">Oyun klasörü</string>
     <string name="wad_dir_prompt">Yapılandırma ve içerik (WAD, DEH, vb.) Dizini.</string>
-    <string name="divide_resolution_by_prompt">Çözünürlük:</string>
+    <string name="divide_resolution_by_prompt">Ekran yüzeyi çözünürlük böleni</string>
     <string name="reset_button_text">sıfırlamak</string>
     <string name="choose_button_text">seçmek</string>
 
@@ -90,4 +90,52 @@
         <item>Orta</item>
         <item>Küçük</item>
     </string-array>
+
+    <!-- Native FNAF options and backup screen. -->
+    <string name="addons_header">Eklentiler</string>
+    <string name="performance_header">Performans</string>
+    <string name="appearance_header">Görünüm</string>
+    <string name="enable_gore_mod_prompt">Gelişmiş kan efektleri</string>
+    <string name="enable_gore_mod_summary">Ek kan ve parçacık efektleri ekler. Oyun içi ayarlardan düzenlenebilir.</string>
+    <string name="haptics_prompt">Titreşim</string>
+    <string name="haptics_summary">Ateş ederken veya hasar alırken titreşir.</string>
+    <string name="theme_mode_prompt">Tema</string>
+    <string name="theme_mode_dark">Koyu</string>
+    <string name="theme_mode_light">Açık</string>
+    <string name="theme_mode_system">Sistem teması</string>
+    <string name="theme_mode_dynamic">Dinamik</string>
+    <string name="engine_options_header">Oyun ayarları</string>
+    <string name="engine_options_summary">Görüş açısını, parlaklığı, sesleri ve diğer ayarları buradan düzenle. Açıkken her oyun başlangıcında uygulanır.</string>
+    <string name="engine_opt_fov">Görüş açısı</string>
+    <string name="engine_opt_brightness">Parlaklık</string>
+    <string name="engine_opt_crosshair">Nişangâh</string>
+    <string name="engine_opt_autosaves">Otomatik kayıt sayısı</string>
+    <string name="engine_opt_master_volume">Genel ses</string>
+    <string name="engine_opt_music_volume">Müzik sesi</string>
+    <string name="engine_opt_sfx_volume">Efekt sesi</string>
+    <string name="engine_opt_dynamic_lights">Dinamik ışıklar</string>
+    <string name="engine_opt_vsync">Dikey eşitleme</string>
+    <string name="engine_opt_fps_hud">FPS sayacını göster</string>
+    <string name="engine_opt_off">Kapalı</string>
+    <string name="backup_header">Yedekle ve geri yükle</string>
+    <string name="backup_summary">Oyun kayıtlarını ve başlatıcı ayarlarını seçtiğin bir ZIP dosyasına kaydet. Geri yükleme bu yedeği geri getirir.</string>
+    <string name="backup_button">Yedekle</string>
+    <string name="restore_button">Geri yükle</string>
+    <string name="backup_done">Yedek tamamlandı (%1$d oyun kaydı).</string>
+    <string name="backup_failed">Yedek alınamadı: %1$s</string>
+    <string name="restore_confirm_title">Yedek geri yüklensin mi?</string>
+    <string name="restore_confirm_message">Yedekteki kayıtlar ve ayarlar mevcut olanların üzerine yazılacak. Bu işlem geri alınamaz.</string>
+    <string name="restore_done">Yedek geri yüklendi. Bazı değişiklikler sonraki açılışta uygulanır.</string>
+    <string name="restore_failed">Yedek geri yüklenemedi: %1$s</string>
+    <string name="cancel_button">İptal</string>
+    <string name="sdcard_button_text">SD kart</string>
+    <string name="sdcard_warning_title">Uyarı</string>
+    <string name="sdcard_warning_message">SD karttaki uygulama klasörü kullanılacak. Uygulamayı kaldırırsan Android bu klasörü ve içindeki oyun kayıtlarını silebilir. Önce yedek al.</string>
+    <string name="sdcard_not_found">Harici SD kart bulunamadı.</string>
+    <string name="error_not_directory">%1$s bir klasör değil</string>
+    <string name="error_not_writable">%1$s klasörüne yazılamıyor</string>
+    <string name="error_contains_spaces">%1$s boşluk içermemeli</string>
+    <string name="new_folder_button">Yeni klasör</string>
+    <string name="new_folder_name_prompt">Yeni klasör adı</string>
+    <string name="create_folder_failed">%1$s klasörü oluşturulamadı</string>
 </resources>

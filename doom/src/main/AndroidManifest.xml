@@ -43,6 +43,24 @@
         android:largeHeap="true"
         android:supportsRtl="true"
         android:theme="@style/AppTheme">
+        <!-- Native landscape home screen, modeled on the supplied launcher reference. -->
+        <activity
+            android:name=".FnafMenuActivity"
+            android:exported="true"
+            android:configChanges="orientation|keyboardHidden|screenSize|screenLayout|smallestScreenSize|density"
+            android:screenOrientation="sensorLandscape"
+            tools:ignore="DiscouragedApi">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+        <activity
+            android:name=".FnafOptionsActivity"
+            android:exported="false"
+            android:screenOrientation="sensorLandscape"
+            tools:ignore="DiscouragedApi" />
         <activity
             android:name=".EntryActivity"
             android:exported="true"
@@ -50,12 +68,6 @@
             android:launchMode="singleInstance"
             android:windowSoftInputMode="stateHidden"
             tools:ignore="DiscouragedApi">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-
-                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
             <!-- Community idgames:// deep links open the Browse tab on the matching WAD. -->
             <intent-filter android:autoVerify="false">
                 <action android:name="android.intent.action.VIEW" />

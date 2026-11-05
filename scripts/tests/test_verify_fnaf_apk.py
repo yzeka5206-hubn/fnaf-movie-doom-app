@@ -41,6 +41,12 @@ class ApkVerifierTest(unittest.TestCase):
                 verifier.validate_apk(self.make_apk(temp, missing_marker=b"forwardSoftEnter"))
 
     @patch.object(verifier, "ASSETS", SMALL_ASSETS)
+    def test_missing_native_menu_rejected(self):
+        with tempfile.TemporaryDirectory() as temp:
+            with self.assertRaisesRegex(ValueError, "marker"):
+                verifier.validate_apk(self.make_apk(temp, missing_marker=b"FnafMenuActivity"))
+
+    @patch.object(verifier, "ASSETS", SMALL_ASSETS)
     def test_missing_game_asset_rejected(self):
         with tempfile.TemporaryDirectory() as temp:
             with self.assertRaisesRegex(ValueError, "missing"):
