@@ -125,13 +125,7 @@ printf '=== Tapping installed-APK preparation button at %s,%s ===\n' "$X" "$Y"
 "$ADB" shell input tap "$X" "$Y"
 # The production APK has no CI-only log statements. Wait for its *published*
 # MediaStore output instead, then verify its bytes and signature below.
-python3 - "$ADB" <<'PYPUBLISHED' || {
-  echo 'Updater did not publish the target file';
-  "$ADB" shell uiautomator dump /sdcard/helper-after.xml >/dev/null || true
-  "$ADB" shell cat /sdcard/helper-after.xml || true
-  "$ADB" logcat -d -s ActivityTaskManager:I AndroidRuntime:E '*:S' | tail -120
-  exit 1
-}
+if ! python3 - "$ADB" <<'PYPUBLISHED'
 import subprocess,sys,time
 adb=sys.argv[1]; end=time.monotonic()+90
 while time.monotonic()<end:
@@ -141,6 +135,13 @@ while time.monotonic()<end:
  time.sleep(2)
 else: raise SystemExit('No published APK after 90 seconds')
 PYPUBLISHED
+then
+  echo 'Updater did not publish the target file'
+  "$ADB" shell uiautomator dump /sdcard/helper-after.xml >/dev/null || true
+  "$ADB" shell cat /sdcard/helper-after.xml || true
+  "$ADB" logcat -d -s ActivityTaskManager:I AndroidRuntime:E '*:S' | tail -120
+  exit 1
+fi
 "$ADB" shell uiautomator dump /sdcard/helper-after.xml >/dev/null || true
 "$ADB" shell cat /sdcard/helper-after.xml || true
 "$ADB" pull /sdcard/Download/FNAF_Ayar_Model_Test.apk "$RUNNER_TEMP/repaired-fixture.apk" >/dev/null
