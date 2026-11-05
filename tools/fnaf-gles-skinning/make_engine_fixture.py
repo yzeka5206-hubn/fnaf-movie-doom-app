@@ -59,7 +59,7 @@ def main():
                          if frame is not None else 'framerate: 24, flags: SAF_LOOP|SAF_INSTANT')
     (out/'fixture.wad').write_bytes(map_data())
     png=BytesIO();Image.new('RGBA',(16,16),(128,0,200,255)).save(png,format='PNG')
-    classes='version "4.12.0"\n';modeldefs='';ednums='DoomEdNums\n{\n';members=set();solid_folders=set()
+    classes='version "4.12.0"\n';modeldefs='';ednums='DoomEdNums\n{\n';members=set();solid_assets={}
     with ZipFile(game) as src, ZipFile(out/'fixture.pk3','w',ZIP_DEFLATED,compresslevel=6) as dst:
         for i,(model,clip,scale) in enumerate(GROUPS[group]):
             # Fail early rather than accepting a test room whose named pose is
@@ -81,8 +81,11 @@ def main():
  }}
 }}
 '''
-            skin_line=' Skin 0 "fixture-solid.png";\n' if args.solid_skin else ''
-            if args.solid_skin: solid_folders.add(folder)
+            solid_name=f'fixture-solid-{i}.png'
+            skin_line=f' Skin 0 "{solid_name}";\n' if args.solid_skin else ''
+            # Three separate colors expose per-actor deformation and also make
+            # swapped palettes or missing mesh parts obvious in screenshots.
+            if args.solid_skin: solid_assets[folder+'/'+solid_name]=[(0,220,255,255),(25,245,25,255),(255,0,220,255)][i]
             modeldefs+=f'''Model {cls}
 {{
  Path "{folder}";
@@ -105,9 +108,9 @@ def main():
         dst.writestr('ZSCRIPT',classes);dst.writestr('MODELDEF',modeldefs)
         dst.writestr('MAPINFO',ednums);dst.writestr('sprites/TSTXA0.png',png.getvalue())
         for n in sorted(members):dst.writestr(n,src.read(n))
-        if solid_folders:
-            solid=BytesIO();Image.new('RGBA',(8,8),(0,220,255,255)).save(solid,format='PNG')
-            for folder in sorted(solid_folders):dst.writestr(folder+'/fixture-solid.png',solid.getvalue())
+        for name,color in sorted(solid_assets.items()):
+            solid=BytesIO();Image.new('RGBA',(8,8),color).save(solid,format='PNG')
+            dst.writestr(name,solid.getvalue())
     print(f'Built {group} fixture: {len(GROUPS[group])} actors, {len(members)} asset files, {out}')
 
 if __name__=='__main__':main()
