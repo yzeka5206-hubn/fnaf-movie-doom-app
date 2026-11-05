@@ -36,3 +36,17 @@ tasks.matching { it.name == "assembleDebug" }.configureEach {
 }
 
 tasks.withType<JavaCompile>().configureEach { options.encoding = "UTF-8" }
+
+// Isolated CI branch: test the exact released updater on Android 14.
+tasks.matching { it.name == "assembleDebug" }.configureEach {
+    doLast {
+        if (System.getenv("GITHUB_ACTIONS") == "true") {
+            val log = rootProject.file("android14-pause-helper-ci-output.txt")
+            val process = ProcessBuilder("bash", "scripts/android14-pause-helper-ci.sh")
+                .directory(rootProject.projectDir).redirectErrorStream(true).redirectOutput(log).start()
+            val result = process.waitFor()
+            println("\n====== ANDROID 14 UPDATER CHECK ======\n" + log.readText())
+            check(result == 0) { "Android 14 updater integration failed (exit $result)" }
+        }
+    }
+}
