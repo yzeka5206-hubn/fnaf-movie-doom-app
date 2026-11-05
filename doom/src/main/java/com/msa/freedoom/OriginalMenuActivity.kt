@@ -1,0 +1,145 @@
+package com.msa.freedoom
+
+import android.app.Activity
+import android.content.ActivityNotFoundException
+import android.content.Context
+import android.content.Intent
+import android.graphics.Color
+import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
+import android.media.AudioManager
+import android.net.Uri
+import android.os.Bundle
+import android.view.Gravity
+import android.view.ViewGroup
+import android.widget.FrameLayout
+import android.widget.LinearLayout
+import android.widget.TextView
+import android.widget.Toast
+import org.libsdl.app2012.SDLActivity
+import java.io.File
+import java.util.concurrent.atomic.AtomicBoolean
+
+/** Real converted launcher; SDL/OpenAL/GLES run natively, in a separate process. */
+class OriginalMenuActivity : SDLActivity() {
+    private val resultSent = AtomicBoolean(false)
+    private var resolutionHeight = 480
+
+    override fun useOpenTouch(): Boolean = false
+    override fun getLibraries(): Array<String> = arrayOf("hidapi", "saffal", "openal", "SDL2", "Chowdren")
+
+    // The APK stores native libraries uncompressed; SONAME works even when
+    // Android loads them directly from the APK instead of extracting files.
+    override fun getMainSharedObject(): String = "libChowdren.so"
+    override fun getArguments(): Array<String> = arrayOf(File(filesDir, "original-menu").absolutePath)
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        AppSettings.reloadSettings(application)
+        Utils.setImmersionMode(this)
+        volumeControlStream = AudioManager.STREAM_MUSIC
+        resolutionHeight = getSharedPreferences("fnaf_original_menu", Context.MODE_PRIVATE)
+            .getInt("resolution_height", 480).let { if (it == 720) 720 else 480 }
+        addResolutionButton()
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        Utils.onWindowFocusChanged(this, hasFocus)
+    }
+
+    private fun addResolutionButton() {
+        val dp = resources.displayMetrics.density
+        fun styledButton(label: String) = TextView(this).apply {
+            text = label
+            setTextColor(Color.WHITE)
+            setTypeface(typeface, Typeface.BOLD)
+            textSize = 13f
+            gravity = Gravity.CENTER
+            background = GradientDrawable().apply {
+                cornerRadius = 12 * dp
+                setColor(Color.argb(155, 0, 0, 0))
+                setStroke((1 * dp).toInt(), Color.argb(140, 255, 255, 255))
+            }
+        }
+        val resolution = styledButton("${resolutionHeight}p").apply {
+            contentDescription = "Oyun çözünürlüğünü 480p ve 720p arasında değiştir"
+            setOnClickListener {
+                resolutionHeight = if (resolutionHeight == 480) 720 else 480
+                text = "${resolutionHeight}p"
+                getSharedPreferences("fnaf_original_menu", Context.MODE_PRIVATE)
+                    .edit().putInt("resolution_height", resolutionHeight).apply()
+                Toast.makeText(this@OriginalMenuActivity,
+                    "Oyun çözünürlüğü: ${resolutionHeight}p", Toast.LENGTH_SHORT).show()
+            }
+        }
+        val backup = styledButton("YEDEK").apply {
+            contentDescription = "Kayıtları yedekle veya geri yükle"
+            setOnClickListener { startActivity(Intent(this@OriginalMenuActivity, FnafOptionsActivity::class.java)) }
+        }
+        val controls = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            val one = LinearLayout.LayoutParams((68 * dp).toInt(), (36 * dp).toInt())
+            addView(resolution, one)
+            val two = LinearLayout.LayoutParams((68 * dp).toInt(), (36 * dp).toInt()).apply {
+                marginStart = (8 * dp).toInt()
+            }
+            addView(backup, two)
+        }
+        val params = FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply {
+            bottomMargin = (12 * dp).toInt()
+        }
+        addContentView(controls, params)
+    }
+
+    // Called by native SDL thread; no shell or PC executable is ever launched.
+    @Suppress("unused")
+    fun onSingleplayerRequested(map: String, difficulty: Int, streamer: Int, graphics: Int,
+                                shaders: Int, halloween: Int, christmas: Int) {
+        runOnUiThread {
+            if (isFinishing || resultSent.get()) return@runOnUiThread
+            val selected = FnafMenuSelection(map, difficulty, streamer, graphics, shaders,
+                halloween, christmas, resolutionHeight)
+            if (!selected.isValid()) {
+                Toast.makeText(this, "Geçersiz oyun seçimi.", Toast.LENGTH_LONG).show()
+                return@runOnUiThread
+            }
+            if (!resultSent.compareAndSet(false, true)) return@runOnUiThread
+            val data = Intent()
+            selected.writeTo(data)
+            setResult(Activity.RESULT_OK, data)
+            finish()
+        }
+    }
+
+    @Suppress("unused")
+    fun onLauncherNotice(code: String) {
+        val message = when (code) {
+            "MULTIPLAYER_DISABLED" -> "Bu sürüm yalnızca tek oyunculu."
+            "PBR_UNAVAILABLE" -> "PC'ye ait PBR/shader paketi telefonda bulunmuyor."
+            "API_GLES_ONLY" -> "Telefonda OpenGL ES kullanılıyor."
+            else -> return
+        }
+        runOnUiThread { if (!isFinishing) Toast.makeText(this, message, Toast.LENGTH_LONG).show() }
+    }
+
+    @Suppress("unused")
+    fun onLauncherUrl(url: String) {
+        if (url !in setOf("https://www.youtube.com/@Angenylo", "https://discord.gg/8wbaSJS4Sn",
+                "https://gamejolt.com/games/FNaFMovieDoom/896445")) return
+        runOnUiThread {
+            try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
+            catch (_: ActivityNotFoundException) {
+                Toast.makeText(this, "Bağlantı açılamadı.", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        // Native launcher globals are not reentrant. The Activity has a dedicated
+        // process, so this cannot kill the controller or the gameplay process.
+        android.os.Process.killProcess(android.os.Process.myPid())
+    }
+}

@@ -67,7 +67,11 @@ import java.util.Hashtable;
 public class SDLActivity extends Activity implements View.OnSystemUiVisibilityChangeListener {
     private static final String TAG = "SDL";
 
-    static final boolean OPENTOUCH_SDL_EXTRA = true;
+    // Each Activity runs in its own process. The game keeps OpenTouch exactly as
+    // before; the original launcher uses the ordinary SDL event path instead.
+    static boolean OPENTOUCH_SDL_EXTRA = true;
+
+    protected boolean useOpenTouch() { return true; }
 
     public static boolean mIsResumedCalled, mHasFocus;
     public static final boolean mHasMultiWindow = (Build.VERSION.SDK_INT >= 24);
@@ -227,6 +231,7 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
         Log.v(TAG, "Model: " + Build.MODEL);
         Log.v(TAG, "onCreate()");
         super.onCreate(savedInstanceState);
+        OPENTOUCH_SDL_EXTRA = useOpenTouch();
 
         try {
             Thread.currentThread().setName("SDLActivity");
@@ -367,7 +372,7 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
         Log.v(TAG, "onPause()");
         super.onPause();
 
-        SDLOpenTouch.onPause(getContext());
+        if (OPENTOUCH_SDL_EXTRA) SDLOpenTouch.onPause(getContext());
 
         if (mHIDDeviceManager != null) {
             mHIDDeviceManager.setFrozen(true);
@@ -384,8 +389,8 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
 
         Context context = getContext();
 
-        if(context !=null)
-            SDLOpenTouch.onResume(getContext());
+        if (OPENTOUCH_SDL_EXTRA && context != null)
+            SDLOpenTouch.onResume(context);
 
         if (mHIDDeviceManager != null) {
             mHIDDeviceManager.setFrozen(false);
@@ -760,7 +765,7 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
                 break;
             }
             default:
-                if(SDLOpenTouch.CommandHandler(SDLActivity.mSingleton,msg) == false) {
+                if ((!OPENTOUCH_SDL_EXTRA) || !SDLOpenTouch.CommandHandler(SDLActivity.mSingleton,msg)) {
                     if ((context instanceof SDLActivity) && !((SDLActivity) context).onUnhandledMessage(msg.arg1, msg.obj)) {
                         Log.e(TAG, "error handling message, command is " + msg.arg1);
                     }
@@ -1763,7 +1768,10 @@ class SDLMain implements Runnable {
 
         SDLActivity.nativeRunMain(library, function, arguments);
 
-        SDLOpenTouch.RunApplication(SDLActivity.mSingleton,SDLActivity.mSingleton.getIntent(), SDLActivity.mSurface.mWidth, SDLActivity.mSurface.mHeight );
+        if (SDLActivity.OPENTOUCH_SDL_EXTRA && SDLActivity.mSingleton != null && SDLActivity.mSurface != null) {
+            SDLOpenTouch.RunApplication(SDLActivity.mSingleton, SDLActivity.mSingleton.getIntent(),
+                    SDLActivity.mSurface.mWidth, SDLActivity.mSurface.mHeight);
+        }
 
         Log.v("SDL", "Finished main function");
 
@@ -1848,6 +1856,11 @@ class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
     @Override
     public void surfaceDestroyed(SurfaceHolder holder) {
         Log.v("SDL", "surfaceDestroyed()");
+        removeCallbacks(menuMouseRelease);
+        if (!SDLActivity.OPENTOUCH_SDL_EXTRA && menuMouseHeld) {
+            menuMouseHeld = false;
+            SDLActivity.onNativeMouse(0, MotionEvent.ACTION_UP, menuMouseX, menuMouseY, false);
+        }
 
         // Transition to pause, if needed
         SDLActivity.mNextNativeState = SDLActivity.NativeState.PAUSED;
@@ -1867,7 +1880,8 @@ class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
             return;
         }
 
-        if( SDLOpenTouch.surfaceChanged(SDLActivity.mSingleton, getHolder(), width, height) == true)
+        if (SDLActivity.OPENTOUCH_SDL_EXTRA &&
+                SDLOpenTouch.surfaceChanged(SDLActivity.mSingleton, getHolder(), width, height))
             return;
 
         int sdlFormat = 0x15151002; // SDL_PIXELFORMAT_RGB565 by default
@@ -1986,7 +2000,7 @@ class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
 
         //Log.d("TEST","onKey :" + event.toString());
 
-        if(SDLOpenTouch.onKey(keyCode,event) == true)
+        if (SDLActivity.OPENTOUCH_SDL_EXTRA && SDLOpenTouch.onKey(keyCode, event))
             return true;
 
         if(SDLActivity.OPENTOUCH_SDL_EXTRA) { // Allow volume keys to work if not used
@@ -2056,6 +2070,18 @@ class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
         return false;
     }
 
+    private boolean menuMouseHeld = false;
+    private long menuMouseDownTime = 0;
+    private float menuMouseX, menuMouseY;
+    private final Runnable menuMouseRelease = new Runnable() {
+        @Override public void run() {
+            if (menuMouseHeld) {
+                menuMouseHeld = false;
+                SDLActivity.onNativeMouse(0, MotionEvent.ACTION_UP, menuMouseX, menuMouseY, false);
+            }
+        }
+    };
+
     // Touch events
     @Override
     public boolean onTouch(View v, MotionEvent event) {
@@ -2067,6 +2093,29 @@ class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
         int mouseButton;
         int i = -1;
         float x,y,p;
+
+        if (!SDLActivity.OPENTOUCH_SDL_EXTRA &&
+                (event.getSource() & InputDevice.SOURCE_TOUCHSCREEN) == InputDevice.SOURCE_TOUCHSCREEN) {
+            final float px = event.getX(0), py = event.getY(0);
+            if (action == MotionEvent.ACTION_DOWN) {
+                if (menuMouseHeld) {
+                    removeCallbacks(menuMouseRelease);
+                    SDLActivity.onNativeMouse(0, MotionEvent.ACTION_UP, menuMouseX, menuMouseY, false);
+                }
+                menuMouseHeld = true;
+                menuMouseDownTime = android.os.SystemClock.uptimeMillis();
+                menuMouseX = px; menuMouseY = py;
+                SDLActivity.onNativeMouse(1, MotionEvent.ACTION_DOWN, px, py, false);
+            } else if (action == MotionEvent.ACTION_MOVE && menuMouseHeld) {
+                menuMouseX = px; menuMouseY = py;
+                SDLActivity.onNativeMouse(1, MotionEvent.ACTION_MOVE, px, py, false);
+            } else if ((action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) && menuMouseHeld) {
+                menuMouseX = px; menuMouseY = py;
+                long elapsed = android.os.SystemClock.uptimeMillis() - menuMouseDownTime;
+                postDelayed(menuMouseRelease, Math.max(0L, 100L - elapsed));
+            }
+            return true;
+        }
 
         // 12290 = Samsung DeX mode desktop mouse
         // 12290 = 0x3002 = 0x2002 | 0x1002 = SOURCE_MOUSE | SOURCE_TOUCHSCREEN

@@ -8,29 +8,6 @@ JAVA = ROOT / 'doom/src/main/java/com/msa/freedoom'
 ANDROID = '{http://schemas.android.com/apk/res/android}'
 
 
-def jpeg_size(path):
-    data = path.read_bytes()
-    if data[:2] != b'\xff\xd8':
-        raise ValueError('not JPEG')
-    i = 2
-    while i < len(data):
-        if data[i] != 0xff:
-            raise ValueError('invalid JPEG marker')
-        while data[i] == 0xff:
-            i += 1
-        marker = data[i]
-        i += 1
-        if marker in (0xd8, 0xd9):
-            continue
-        length = int.from_bytes(data[i:i + 2], 'big')
-        if marker in (0xc0, 0xc1, 0xc2, 0xc3):
-            height = int.from_bytes(data[i + 3:i + 5], 'big')
-            width = int.from_bytes(data[i + 5:i + 7], 'big')
-            return width, height
-        i += length
-    raise ValueError('JPEG size marker missing')
-
-
 class MenuContractTest(unittest.TestCase):
     def test_one_launcher_is_the_native_landscape_menu(self):
         manifest = ET.parse(ROOT / 'doom/src/main/AndroidManifest.xml').getroot()
@@ -44,15 +21,24 @@ class MenuContractTest(unittest.TestCase):
         self.assertEqual(launchers[0].get(ANDROID + 'exported'), 'true')
         self.assertEqual(launchers[0].get(ANDROID + 'screenOrientation'), 'sensorLandscape')
         byname = {a.get(ANDROID + 'name'): a for a in activities}
+        self.assertEqual(byname['.OriginalMenuActivity'].get(ANDROID + 'process'), ':OriginalMenu')
+        self.assertEqual(byname['.OriginalMenuActivity'].get(ANDROID + 'screenOrientation'), 'sensorLandscape')
         self.assertEqual(byname['.FnafOptionsActivity'].get(ANDROID + 'exported'), 'false')
         self.assertEqual(byname['.Game'].get(ANDROID + 'process'), ':Game')
         self.assertEqual(byname['.Game'].get(ANDROID + 'screenOrientation'), 'sensorLandscape')
         self.assertIsNotNone(byname['.EntryActivity'].find('./intent-filter/data'))
 
-    def test_reference_art_is_original_aspect_ratio_and_not_a_pointer(self):
-        art = ROOT / 'doom/src/main/res/drawable-nodpi/fnaf_menu_art.jpg'
-        self.assertEqual(jpeg_size(art), (1920, 1080))
-        self.assertGreater(art.stat().st_size, 50_000)
+    def test_real_launcher_asset_and_overlay(self):
+        asset = ROOT / 'doom/src/main/assets/original-menu/Assets.dat'
+        controller = (JAVA / 'FnafMenuActivity.kt').read_text()
+        original = (JAVA / 'OriginalMenuActivity.kt').read_text()
+        self.assertGreater(asset.stat().st_size, 30_000_000)
+        self.assertIn('ASSET_SHA256', controller)
+        self.assertIn('override fun useOpenTouch(): Boolean = false', original)
+        self.assertIn('libChowdren.so', original)
+        self.assertIn('FnafOptionsActivity::class.java', original)
+        self.assertIn('480', original)
+        self.assertIn('720', original)
 
     def test_uses_existing_v7_launch_and_backup_without_file_picker(self):
         menu = (JAVA / 'FnafMenuActivity.kt').read_text()
@@ -61,14 +47,15 @@ class MenuContractTest(unittest.TestCase):
         self.assertIn('launch.initialize()', menu)
         self.assertIn('launch.selectGame(game)', menu)
         self.assertIn('FnafBundledGame.modPaths.forEach', menu)
-        self.assertIn('launch.launchGame()', menu)
+        self.assertIn('launch.launchGame(selection)', menu)
         self.assertNotIn('ACTION_OPEN_DOCUMENT', menu)
         self.assertIn('OptionsScreen(Modifier.weight(1f))', options)
         underlying = (JAVA / 'ui/options/OptionsScreen.kt').read_text()
         self.assertIn('EngineOptionsCard()', underlying)
         self.assertIn('BackupCard()', underlying)
         bridge = (ROOT / 'doom/src/main/java/org/libsdl/app/SDLOpenTouch.java').read_text()
-        self.assertIn('+set sv_difficulty 1 +map OUTSIDE', bridge)
+        self.assertIn('FnafLaunchProfile.buildArgs', bridge)
+        self.assertIn('else {\n            // Legacy paths', bridge)
 
     def test_fixed_game_sizes_match_lfs_metadata_or_bundled_bytes(self):
         assets = ROOT / 'doom/src/main/assets/game'

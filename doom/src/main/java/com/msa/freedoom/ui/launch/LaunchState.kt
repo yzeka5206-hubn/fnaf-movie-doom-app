@@ -13,6 +13,7 @@ import java.util.ArrayList
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import com.msa.freedoom.AppSettings
+import com.msa.freedoom.FnafMenuSelection
 import com.msa.freedoom.Game
 import com.msa.freedoom.R
 import com.msa.freedoom.Utils
@@ -155,7 +156,7 @@ class LaunchState(private val activity: Activity) {
     }
 
     /** Ports LaunchFragmentGZdoom.startGame() — the Intent contract must stay identical. */
-    suspend fun launchGame() {
+    suspend fun launchGame(selection: FnafMenuSelection? = null) {
         val game = selectedGame ?: return
         if (isLaunching) return
         val base = baseDir
@@ -222,6 +223,7 @@ class LaunchState(private val activity: Activity) {
             putExtra("game_path", base)
             putExtra("game", "com.msa.freedoom")
             putExtra("args", buildLaunchArgs(game.iwadArgs, buildModArgs(selectedMods) + goreArgs + engineArgs, extraArgs, base))
+            selection?.writeTo(this)
         }
         activity.startActivity(intent)
     }

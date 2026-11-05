@@ -1,12 +1,12 @@
 package com.msa.freedoom
 
-import android.content.ActivityNotFoundException
-import android.content.Context
+import android.app.Activity
 import android.content.Intent
-import android.media.AudioManager
-import android.net.Uri
+import android.graphics.Color
 import android.os.Bundle
-import android.widget.Toast
+import android.view.Gravity
+import android.widget.TextView
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
@@ -19,44 +19,59 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.IOException
+import java.security.MessageDigest
 
-/** Android home menu; never runs the Windows launcher or asks for game files. */
+/** Controller only: the visual menu is the game's converted native launcher. */
 class FnafMenuActivity : AppCompatActivity() {
-    private lateinit var menu: FnafMenuView
-    private var preparing = false
+    private lateinit var status: TextView
+    private var gameStarted = false
+    private var menuLaunched = false
+
+    private val originalMenu = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        menuLaunched = false
+        if (result.resultCode != Activity.RESULT_OK) {
+            finish()
+        } else {
+            val selection = FnafMenuSelection.fromIntent(result.data)
+            if (selection == null) showFailure("Menüden geçersiz seçim geldi.")
+            else startSingleplayer(selection)
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         AppSettings.reloadSettings(application)
         Utils.setImmersionMode(this)
-        menu = FnafMenuView(this, object : FnafMenuView.Listener {
-            override fun onSingleplayer() = startSingleplayer()
-            override fun onMultiplayer() {
-                Toast.makeText(this@FnafMenuActivity, "Bu sürüm tek oyunculu; çok oyunculu kapalı.", Toast.LENGTH_LONG).show()
-            }
-            override fun onOptions() {
-                startActivity(Intent(this@FnafMenuActivity, FnafOptionsActivity::class.java))
-            }
-            override fun onYouTube() = openLink("https://www.youtube.com/watch?v=VznYMQ0hnf4")
-            override fun onDiscord() = openLink("https://discord.gg/bkPhs73Xsx")
-            override fun onVolume() {
-                // The screenshot's speaker opens the actual device media-volume panel.
-                val audio = getSystemService(Context.AUDIO_SERVICE) as? AudioManager
-                if (audio != null) {
-                    audio.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_SAME, AudioManager.FLAG_SHOW_UI)
-                } else {
-                    Toast.makeText(this@FnafMenuActivity, "Ses ayarları açılamadı.", Toast.LENGTH_SHORT).show()
-                }
-            }
-        })
-        setContentView(menu)
+        status = TextView(this).apply {
+            text = "Özgün menü hazırlanıyor..."
+            textSize = 18f
+            setTextColor(Color.WHITE)
+            setBackgroundColor(Color.BLACK)
+            gravity = Gravity.CENTER
+        }
+        setContentView(status)
+        if (savedInstanceState == null) prepareMenu()
+        else {
+            gameStarted = savedInstanceState.getBoolean("game_started", false)
+            menuLaunched = savedInstanceState.getBoolean("menu_launched", false)
+            if (!gameStarted && !menuLaunched) prepareMenu()
+        }
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putBoolean("game_started", gameStarted)
+        outState.putBoolean("menu_launched", menuLaunched)
+        super.onSaveInstanceState(outState)
     }
 
     override fun onResume() {
         super.onResume()
-        // Settings may have been restored/changed, and a Game session may have just ended.
         AppSettings.reloadSettings(application)
         StatsStore.finalizeSession(this)
+        if (gameStarted) {
+            gameStarted = false
+            prepareMenu()
+        }
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
@@ -64,19 +79,57 @@ class FnafMenuActivity : AppCompatActivity() {
         Utils.onWindowFocusChanged(this, hasFocus)
     }
 
-    private fun openLink(url: String) {
-        try {
-            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
-        } catch (_: ActivityNotFoundException) {
-            Toast.makeText(this, "Bağlantıyı açacak uygulama bulunamadı.", Toast.LENGTH_LONG).show()
+    private fun prepareMenu() {
+        if (menuLaunched || isFinishing || isDestroyed) return
+        status.text = "Özgün menü hazırlanıyor..."
+        lifecycleScope.launch {
+            try {
+                withContext(Dispatchers.IO) { prepareOriginalAssets() }
+                if (!isFinishing && !isDestroyed && !menuLaunched) {
+                    menuLaunched = true
+                    originalMenu.launch(Intent(this@FnafMenuActivity, OriginalMenuActivity::class.java))
+                }
+            } catch (cancel: CancellationException) {
+                throw cancel
+            } catch (e: Exception) {
+                showFailure(e.message ?: "Menü verileri hazırlanamadı.")
+            }
         }
     }
 
-    private fun startSingleplayer() {
-        if (preparing) return
-        preparing = true
-        menu.setBusy(true)
-        // Reuse the same v7 extraction, engine settings, savedir and Game intent path.
+    private fun prepareOriginalAssets() {
+        val dir = File(filesDir, "original-menu")
+        if (!dir.isDirectory && !dir.mkdirs()) throw IOException("Menü klasörü oluşturulamadı.")
+        val target = File(dir, "Assets.dat")
+        if (target.isFile && target.length() == ASSET_SIZE && digest(target) == ASSET_SHA256) return
+        val temp = File(dir, "Assets.dat.part")
+        try {
+            assets.open("original-menu/Assets.dat").use { input ->
+                temp.outputStream().buffered().use { output -> input.copyTo(output) }
+            }
+            if (temp.length() != ASSET_SIZE || digest(temp) != ASSET_SHA256)
+                throw IOException("Menü verilerinin doğrulaması başarısız.")
+            if (!temp.renameTo(target)) throw IOException("Menü verileri kaydedilemedi.")
+        } finally {
+            if (temp.exists()) temp.delete()
+        }
+    }
+
+    private fun digest(file: File): String {
+        val hash = MessageDigest.getInstance("SHA-256")
+        file.inputStream().buffered().use { input ->
+            val buffer = ByteArray(128 * 1024)
+            while (true) {
+                val n = input.read(buffer)
+                if (n < 0) break
+                hash.update(buffer, 0, n)
+            }
+        }
+        return hash.digest().joinToString("") { "%02x".format(it.toInt() and 0xff) }
+    }
+
+    private fun startSingleplayer(selection: FnafMenuSelection) {
+        status.text = "Oyun hazırlanıyor..."
         val launch = LaunchState(this)
         lifecycleScope.launch {
             try {
@@ -91,22 +144,26 @@ class FnafMenuActivity : AppCompatActivity() {
                 launch.selectGame(game)
                 launch.selectedMods.clear()
                 FnafBundledGame.modPaths.forEach { launch.selectedMods.add(ModEntry(it)) }
-                launch.launchGame()
+                launch.launchGame(selection)
                 launch.errorMessage?.let { throw IOException(it) }
+                gameStarted = true
             } catch (cancel: CancellationException) {
                 throw cancel
             } catch (e: Exception) {
-                if (!isFinishing && !isDestroyed) {
-                    AlertDialog.Builder(this@FnafMenuActivity)
-                        .setTitle("Oyun başlatılamadı")
-                        .setMessage(e.message ?: "Bilinmeyen hata")
-                        .setPositiveButton("Tamam", null)
-                        .show()
-                }
-            } finally {
-                preparing = false
-                if (!isFinishing && !isDestroyed) menu.setBusy(false)
+                showFailure(e.message ?: "Oyun başlatılamadı.")
             }
         }
+    }
+
+    private fun showFailure(message: String) {
+        if (isFinishing || isDestroyed) return
+        AlertDialog.Builder(this).setTitle("Başlatılamadı").setMessage(message)
+            .setPositiveButton("Menüye dön") { _, _ -> prepareMenu() }
+            .setNegativeButton("Çık") { _, _ -> finish() }.show()
+    }
+
+    companion object {
+        private const val ASSET_SIZE = 30_100_410L
+        private const val ASSET_SHA256 = "eb7c62aa6f6f05ffc280122f92a4555ed4e6b59e66977c383e0c07202ee36846"
     }
 }

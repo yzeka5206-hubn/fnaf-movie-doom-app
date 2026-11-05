@@ -56,6 +56,14 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <!-- The original converted launcher and gameplay each own their own SDL process. -->
+        <activity
+            android:name=".OriginalMenuActivity"
+            android:exported="false"
+            android:process=":OriginalMenu"
+            android:configChanges="orientation|keyboardHidden|screenSize|screenLayout|smallestScreenSize|density"
+            android:screenOrientation="sensorLandscape"
+            tools:ignore="DiscouragedApi" />
         <activity
             android:name=".FnafOptionsActivity"
             android:exported="false"

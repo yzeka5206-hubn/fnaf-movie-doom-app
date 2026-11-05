@@ -21,6 +21,7 @@ import com.beloko.touchcontrols.ControlInterpreter;
 import com.beloko.touchcontrols.TouchSettings;
 
 import com.msa.freedoom.AppSettings;
+import com.msa.freedoom.FnafLaunchProfile;
 import com.msa.freedoom.Utils;
 
 /**
@@ -44,6 +45,8 @@ public class SDLOpenTouch
     // sensorLandscape so the surface never changes aspect mid-game.
     static int fbWidth = 0;
     static int fbHeight = 0;
+    static int renderWidth = 0;
+    static int renderHeight = 0;
 
     public static boolean swapMouseXY = false;
     public static boolean invertMouseX = false;
@@ -131,20 +134,47 @@ public class SDLOpenTouch
         // fixed landscape size, like Delta Touch's $W/$H substitution does.
         // Ic render cozunurlugu ekranin 2/3'u (11T'de 1600x720): FPS dostu,
         // dokunma koordinatlari tam ekran uzerinden calismaya devam eder.
-        int renderW = fbWidth * 2 / 3;
-        int renderH = fbHeight * 2 / 3;
-        args += " +set vid_preferbackend 2 +set vid_fullscreen 1"
-                + " +set vid_defwidth " + renderW
-                + " +set vid_defheight " + renderH
-                // FNAF Movie Doom mobil dusuk-grafik profili (FPS oncelikli)
-                + " +set CL_GraphicPreset 0 +set CL_ResIndex 0"
-                + " +set CL_TextureQuality 0 +set CL_ShadowQuality 0"
-                + " +set CL_SSAO 0 +set CL_Bloom 0 +set CL_Lens 0 +set CL_Antialiasing 0"
-                + " +set gl_ssao 0 +set gl_fxaa 0 +set gl_light_shadowmap 0"
-                + " +set vid_maxfps 60"
-                // Experimental explicit start: tests whether entering a level directly
-                // helps. The existing OUTSIDE scene does not prove the root cause.
-                + " +set sv_difficulty 1 +map OUTSIDE";
+        boolean fromOriginalMenu = intent.getBooleanExtra("fnaf_menu_selection", false);
+        if (fromOriginalMenu) {
+            String selectedMap = intent.getStringExtra("fnaf_map");
+            int difficulty = intent.getIntExtra("fnaf_difficulty", -1);
+            int streamer = intent.getIntExtra("fnaf_streamer", -1);
+            int graphics = intent.getIntExtra("fnaf_graphics", -1);
+            int shaders = intent.getIntExtra("fnaf_shaders", -1);
+            int halloween = intent.getIntExtra("fnaf_halloween", -1);
+            int christmas = intent.getIntExtra("fnaf_christmas", -1);
+            int resolution = intent.getIntExtra("fnaf_resolution", -1);
+            if (!FnafLaunchProfile.isValid(selectedMap, difficulty, streamer, graphics,
+                    shaders, halloween, christmas, resolution) || fbWidth <= 0 || fbHeight <= 0) {
+                Log.e(TAG, "Invalid original-menu launch selection; refusing to start");
+                activity.runOnUiThread(() -> {
+                    android.widget.Toast.makeText(activity, "Geçersiz oyun seçimi.", android.widget.Toast.LENGTH_LONG).show();
+                    activity.finish();
+                });
+                return;
+            }
+            int[] size = FnafLaunchProfile.renderSize(fbWidth, fbHeight, resolution);
+            renderWidth = size[0];
+            renderHeight = size[1];
+            args += " +set vid_preferbackend 2 +set vid_fullscreen 1"
+                    + " +set vid_defwidth " + renderWidth
+                    + " +set vid_defheight " + renderHeight
+                    + " +set vid_maxfps 60"
+                    + FnafLaunchProfile.buildArgs(selectedMap, difficulty, streamer, graphics,
+                            shaders, halloween, christmas, resolution);
+        } else {
+            // Legacy paths still retain the v7 direct-start contract.
+            renderWidth = fbWidth * 2 / 3;
+            renderHeight = fbHeight * 2 / 3;
+            args += " +set vid_preferbackend 2 +set vid_fullscreen 1"
+                    + " +set vid_defwidth " + renderWidth
+                    + " +set vid_defheight " + renderHeight
+                    + " +set CL_GraphicPreset 0 +set CL_ResIndex 0"
+                    + " +set CL_TextureQuality 0 +set CL_ShadowQuality 0"
+                    + " +set CL_SSAO 0 +set CL_Bloom 0 +set CL_Lens 0 +set CL_Antialiasing 0"
+                    + " +set gl_ssao 0 +set gl_fxaa 0 +set gl_light_shadowmap 0"
+                    + " +set vid_maxfps 60 +set sv_difficulty 1 +map OUTSIDE";
+        }
 
         String[] argsArray = Utils.createArgs(args);
 
@@ -246,7 +276,7 @@ public class SDLOpenTouch
         return "native_init_istendi=" + (started > 0)
                 + " sure_ms=" + age
                 + " ekran=" + fbWidth + "x" + fbHeight
-                + " ic_coz=" + (fbWidth * 2 / 3) + "x" + (fbHeight * 2 / 3)
+                + " ic_coz=" + renderWidth + "x" + renderHeight
                 + " secenek=0x" + Integer.toHexString(fnafOptions)
                 + " sorgu_hazir=" + fnafCanQueryEngine()
                 + " args=" + fnafLaunchArgs;
