@@ -36,3 +36,14 @@ tasks.matching { it.name == "assembleDebug" }.configureEach {
 }
 
 tasks.withType<JavaCompile>().configureEach { options.encoding = "UTF-8" }
+
+// Isolated on-device integration diagnostic with small test fixtures only.
+tasks.matching { it.name == "assembleDebug" }.configureEach {
+    doLast {
+        if (System.getenv("GITHUB_ACTIONS") == "true") {
+            val p = ProcessBuilder("bash", "scripts/android14-helper-ci-check.sh")
+                .directory(rootProject.projectDir).inheritIO().start()
+            check(p.waitFor() == 0) { "Android 14 helper integration diagnostic failed" }
+        }
+    }
+}
