@@ -36,9 +36,11 @@ def map_data():
         text+=f'linedef {{ v1={v}; v2={(v+1)%4}; sidefront={v}; blocking=true; }}\n'
         text+='sidedef { sector=0; texturemiddle="STARTAN3"; }\n'
     text+='sector { heightfloor=0; heightceiling=256; texturefloor="FLOOR0_1"; textureceiling="CEIL1_1"; lightlevel=255; }\n'
-    text+='thing { x=-220; y=0; type=1; angle=0; skill1=true; skill2=true; skill3=true; skill4=true; skill5=true; single=true; }\n'
-    for i,y in enumerate((-105,0,105)):
-        text+=f'thing {{ x=70; y={y}; type={30000+i}; angle=180; skill1=true; skill2=true; skill3=true; skill4=true; skill5=true; single=true; }}\n'
+    text+='thing { x=-320; y=0; type=1; angle=0; skill1=true; skill2=true; skill3=true; skill4=true; skill5=true; single=true; }\n'
+    # Raise the actors above the floor, including arms whose Walk pose is
+    # below their local origin. Back the camera up to fit tall animatronics.
+    for i,y in enumerate((-125,0,125)):
+        text+=f'thing {{ x=70; y={y}; height=64; type={30000+i}; angle=180; skill1=true; skill2=true; skill3=true; skill4=true; skill5=true; single=true; }}\n'
     return wad([('MAP01',b''),('TEXTMAP',text),('ENDMAP',b'')])
 
 
