@@ -6,14 +6,24 @@ EMU="$ANDROID_SDK_ROOT/emulator/emulator"
 ADB="$ANDROID_SDK_ROOT/platform-tools/adb"
 FIX="$PWD/doom/repair/fixtures"
 HELPER="$PWD/doom/build/outputs/apk/debug/FNAF-Menu-Onarici.apk"
-cleanup() { "$ADB" emu kill >/dev/null 2>&1 || true; [ -z "${EPID:-}" ] || kill "$EPID" >/dev/null 2>&1 || true; }
+cleanup() {
+  rc=$?
+  echo "=== helper test cleanup (exit $rc); emulator log tail ==="
+  tail -100 "$RUNNER_TEMP/helper-emulator.txt" 2>/dev/null || true
+  timeout 10 "$ADB" emu kill >/dev/null 2>&1 || true
+  [ -z "${EPID:-}" ] || kill "$EPID" >/dev/null 2>&1 || true
+}
 trap cleanup EXIT
 [ -e /dev/kvm ] || { echo 'No /dev/kvm; helper integration test unavailable'; exit 1; }
 sudo chmod a+rw /dev/kvm
+echo "=== KVM diagnostic ==="
+ls -l /dev/kvm
+"$EMU" -accel-check || true
+"$ADB" start-server
 "$SDKMAN" 'system-images;android-34;google_atd;x86_64' > "$RUNNER_TEMP/helper-sdk.txt" 2>&1 || { tail -40 "$RUNNER_TEMP/helper-sdk.txt"; exit 1; }
 printf 'no\n' | "$AVDMAN" create avd --force --name helperAndroid14 --package 'system-images;android-34;google_atd;x86_64' --device 'pixel_2' > "$RUNNER_TEMP/helper-avd.txt" 2>&1
-"$EMU" -avd helperAndroid14 -no-window -no-snapshot -no-audio -no-boot-anim -gpu swiftshader_indirect -memory 1536 -cores 2 > "$RUNNER_TEMP/helper-emulator.txt" 2>&1 & EPID=$!
-timeout 240 "$ADB" wait-for-device
+"$EMU" -avd helperAndroid14 -no-window -no-snapshot -no-audio -no-boot-anim -gpu swiftshader_indirect -memory 1536 -cores 2 -verbose > "$RUNNER_TEMP/helper-emulator.txt" 2>&1 & EPID=$!
+timeout 120 "$ADB" wait-for-device || { echo "ADB did not connect"; "$ADB" devices -l; exit 1; }
 BOOT=$("$ADB" shell getprop sys.boot_completed | tr -d '\r')
 if [ "$BOOT" != 1 ]; then
   timeout 240 bash -c '"$1" logcat -b events -v brief | grep -m 1 -E "boot_progress_enable_screen|boot_progress_launcher|am_boot_complete"' _ "$ADB" || { tail -60 "$RUNNER_TEMP/helper-emulator.txt"; exit 1; }
