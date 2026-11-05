@@ -3,7 +3,6 @@
 set -Eeuo pipefail
 OUT="$PWD/doom/build/outputs/apk/debug"
 SDKMAN="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
-AVDMAN="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/avdmanager"
 EMU="$ANDROID_SDK_ROOT/emulator/emulator"
 ADB="$ANDROID_SDK_ROOT/platform-tools/adb"
 APK="$OUT/doom-debug.apk"
@@ -13,9 +12,10 @@ SCREEN="$RUNNER_TEMP/menu-diagnostic-screen.png"
 cleanup() {
   rc=$?
   echo "=== Diagnostic cleanup status $rc ==="
+  tail -50 "$RUNNER_TEMP/ci-emulator.txt" 2>/dev/null || true
   if [ -f "$LOG" ]; then cp "$LOG" "$OUT/CI-diagnostic-log.txt.apk"; fi
   if [ -f "$SCREEN" ] && [ -s "$SCREEN" ]; then cp "$SCREEN" "$OUT/CI-diagnostic-screen.png.apk"; fi
-  "$ADB" emu kill >/dev/null 2>&1 || true
+  timeout 10 "$ADB" emu kill >/dev/null 2>&1 || true
   if [ -n "${EPID:-}" ]; then kill "$EPID" >/dev/null 2>&1 || true; fi
 }
 trap cleanup EXIT
@@ -23,11 +23,39 @@ trap cleanup EXIT
 [ -e /dev/kvm ] || { echo 'No /dev/kvm; CI Android 14 diagnostic skipped'; exit 0; }
 sudo chmod a+rw /dev/kvm
 printf '=== Installing Android 14 Google APIs image ===\n'
-"$SDKMAN" 'system-images;android-34;google_apis;x86_64' > "$RUNNER_TEMP/ci-sdk-install.txt" 2>&1 || { tail -40 "$RUNNER_TEMP/ci-sdk-install.txt"; exit 1; }
-printf 'no\n' | "$AVDMAN" create avd --force --name fnafAndroid14 --package 'system-images;android-34;google_apis;x86_64' --device 'pixel_2' > "$RUNNER_TEMP/ci-avd-create.txt" 2>&1
+"$SDKMAN" 'emulator' 'system-images;android-34;google_apis;x86_64' > "$RUNNER_TEMP/ci-sdk-install.txt" 2>&1 || { tail -40 "$RUNNER_TEMP/ci-sdk-install.txt"; exit 1; }
+"$EMU" -accel-check || true
+"$ADB" start-server
+export ANDROID_AVD_HOME="$RUNNER_TEMP/fnaf-avds"
+mkdir -p "$ANDROID_AVD_HOME/fnafAndroid14.avd"
+cat > "$ANDROID_AVD_HOME/fnafAndroid14.ini" <<EOF
+avd.ini.encoding=UTF-8
+path=$ANDROID_AVD_HOME/fnafAndroid14.avd
+target=android-34
+EOF
+cat > "$ANDROID_AVD_HOME/fnafAndroid14.avd/config.ini" <<EOF
+AvdId=fnafAndroid14
+abi.type=x86_64
+avd.ini.encoding=UTF-8
+disk.dataPartition.size=3G
+hw.cpu.arch=x86_64
+hw.cpu.ncore=2
+hw.lcd.density=320
+hw.lcd.width=1080
+hw.lcd.height=1920
+hw.ramSize=2048
+hw.keyboard=yes
+hw.gpu.enabled=yes
+image.sysdir.1=system-images/android-34/google_apis/x86_64/
+tag.display=Google APIs
+tag.id=google_apis
+PlayStore.enabled=false
+vm.heapSize=256
+EOF
+"$EMU" -list-avds
 "$EMU" -avd fnafAndroid14 -no-window -no-snapshot -no-audio -no-boot-anim -gpu swiftshader_indirect -memory 2048 -cores 2 > "$RUNNER_TEMP/ci-emulator.txt" 2>&1 & EPID=$!
 printf '=== Waiting for Android device ===\n'
-timeout 240 "$ADB" wait-for-device
+timeout 180 "$ADB" wait-for-device || { echo "ADB did not connect"; "$ADB" devices -l; exit 1; }
 # Listen for the standard boot event; avoid hammering the emulator with polling.
 BOOT=$("$ADB" shell getprop sys.boot_completed | tr -d '\r')
 if [ "$BOOT" != 1 ]; then

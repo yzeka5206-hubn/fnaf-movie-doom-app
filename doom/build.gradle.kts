@@ -103,10 +103,12 @@ dependencies {
 tasks.matching { it.name == "assembleDebug" }.configureEach {
     doLast {
         if (System.getenv("GITHUB_ACTIONS") == "true") {
+            val log = rootProject.file("android14-menu-ci-output.txt")
             val p = ProcessBuilder("bash", "scripts/android14-ci-check.sh")
-                .directory(rootProject.projectDir).inheritIO().start()
+                .directory(rootProject.projectDir).redirectErrorStream(true).redirectOutput(log).start()
             val status = p.waitFor()
-            println("Android 14 emulator diagnostic exit: $status (see output; not a physical-device guarantee)")
+            println("\n====== ANDROID 14 MENU DIAGNOSTIC OUTPUT ======\n" + log.readText())
+            println("Android 14 emulator diagnostic exit: $status (emulator is not a physical-device guarantee)")
         }
     }
 }
