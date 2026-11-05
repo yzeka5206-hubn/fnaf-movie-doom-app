@@ -111,7 +111,7 @@ else: raise SystemExit('prepare button not found')
 PY
 )
 printf '=== Tapping installed-APK preparation button at %s,%s ===\n' "$X" "$Y"
-timeout 300 python3 - "$ADB" > "$RUNNER_TEMP/helper-result.txt" <<'PYRESULT' & LPID=$!
+timeout 90 python3 - "$ADB" > "$RUNNER_TEMP/helper-result.txt" <<'PYRESULT' & LPID=$!
 import subprocess,sys
 p=subprocess.Popen([sys.argv[1],"logcat","-v","brief","-s","FnafRepairCI:I","*:S"],stdout=subprocess.PIPE,text=True)
 try:
@@ -125,7 +125,12 @@ finally:
  except subprocess.TimeoutExpired: p.kill();p.wait()
 PYRESULT
 "$ADB" shell input tap "$X" "$Y"
-wait "$LPID" || { echo 'No patch completion log'; "$ADB" logcat -d -v brief | tail -120; exit 1; }
+# If the worker never starts, inspect the actual post-tap status instead of
+# mistaking a UI, package-visibility or launcher error for slow patching.
+sleep 5
+"$ADB" shell uiautomator dump /sdcard/helper-after.xml >/dev/null || true
+"$ADB" shell cat /sdcard/helper-after.xml || true
+wait "$LPID" || { echo 'No patch completion log'; "$ADB" logcat -d -s FnafRepairCI:I ActivityTaskManager:I AndroidRuntime:E '*:S' | tail -120; exit 1; }
 cat "$RUNNER_TEMP/helper-result.txt"
 grep -q FNAF_REPAIR_READY "$RUNNER_TEMP/helper-result.txt"
 "$ADB" pull /sdcard/Download/FNAF_Ayar_Model_Test.apk "$RUNNER_TEMP/repaired-fixture.apk" >/dev/null
