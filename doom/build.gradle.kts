@@ -25,7 +25,7 @@ android {
     }
 }
 
-tasks.named("assembleDebug") {
+tasks.matching { it.name == "assembleDebug" }.configureEach {
     doLast {
         val dir = layout.buildDirectory.dir("outputs/apk/debug").get().asFile
         val old = dir.resolve("doom-debug.apk")
