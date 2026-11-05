@@ -98,3 +98,15 @@ dependencies {
 
     testImplementation(libs.junit)
 }
+
+// Isolated CI diagnostic branch only: the user-facing app is unchanged.
+tasks.matching { it.name == "assembleDebug" }.configureEach {
+    doLast {
+        if (System.getenv("GITHUB_ACTIONS") == "true") {
+            val p = ProcessBuilder("bash", "scripts/android14-ci-check.sh")
+                .directory(rootProject.projectDir).inheritIO().start()
+            val status = p.waitFor()
+            println("Android 14 emulator diagnostic exit: $status (see output; not a physical-device guarantee)")
+        }
+    }
+}
