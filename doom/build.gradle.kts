@@ -15,6 +15,10 @@ android {
         versionCode = 10
         versionName = "0.9.0-original-menu-test"
 
+        // The launcher and the game both ship ARM native libraries; do not
+        // advertise x86 ABIs merely because a transitive AndroidX AAR has one.
+        ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
+
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 

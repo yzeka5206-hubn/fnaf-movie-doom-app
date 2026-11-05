@@ -44,3 +44,7 @@ checks. If `glslangValidator` is on PATH, all 37 converted shader pairs are
 compiled and linked in the former; Java/JDK and `readelf` are also required.
 The script reports its 360 selection combinations separately. None of these
 tests implies successful execution on Android.
+After building, `python3 tools/original-menu/verify-apk.py path/to/doom-debug.apk`
+checks original media hashes, ARM-only ABIs, library alignment and DEX markers.
+Use Android build-tools `apksigner verify --verbose --print-certs` separately
+for the signature. These checks cannot prove that the APK runs on a phone.

@@ -43,7 +43,7 @@
         android:largeHeap="true"
         android:supportsRtl="true"
         android:theme="@style/AppTheme">
-        <!-- Native landscape home screen, modeled on the supplied launcher reference. -->
+        <!-- Controller opens the converted native launcher in its own SDL process. -->
         <activity
             android:name=".FnafMenuActivity"
             android:exported="true"
