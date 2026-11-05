@@ -26,7 +26,14 @@ class OriginalMenuActivity : SDLActivity() {
     private var resolutionHeight = 480
 
     override fun useOpenTouch(): Boolean = false
-    override fun getLibraries(): Array<String> = arrayOf("hidapi", "saffal", "openal", "SDL2", "Chowdren")
+    override fun getLibraries(): Array<String> = arrayOf("hidapi", "saffal", "openal", "SDL2", "Chowdren", "FnafMenuRunner")
+
+    private external fun nativeRunConvertedLauncher(arguments: Array<String>): Int
+
+    override fun runLauncherAfterSdlSetup(arguments: Array<String>) {
+        val result = nativeRunConvertedLauncher(arguments)
+        if (result != 0) android.util.Log.e("FnafMenuRunner", "Launcher returned status $result")
+    }
 
     // The APK stores native libraries uncompressed; SONAME works even when
     // Android loads them directly from the APK instead of extracting files.
