@@ -3,6 +3,7 @@ plugins { alias(libs.plugins.android.application) }
 // One-time small offline updater for the 2026-11-05 Android 14 menu test.
 // This branch does not build or alter the game itself.
 android {
+    enableKotlin = false // This small helper contains Java only.
     namespace = "com.fnaf.moviedoom.repair"
     compileSdk = 36
     defaultConfig {
