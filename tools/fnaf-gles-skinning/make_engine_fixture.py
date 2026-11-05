@@ -43,9 +43,15 @@ def map_data():
 
 
 def main():
-    if len(sys.argv)!=4 or sys.argv[2] not in GROUPS:
-        raise SystemExit('Usage: make_engine_fixture.py game.pk3 '+str(list(GROUPS))+' output-directory')
-    game,group,out=sys.argv[1:];out=Path(out);out.mkdir(parents=True,exist_ok=True)
+    if len(sys.argv) not in (4,5) or sys.argv[2] not in GROUPS:
+        raise SystemExit('Usage: make_engine_fixture.py game.pk3 '+str(list(GROUPS))+' output-directory [fixed-walk-frame]')
+    game,group,out=sys.argv[1:4];out=Path(out);out.mkdir(parents=True,exist_ok=True)
+    frame = int(sys.argv[4]) if len(sys.argv)==5 else None
+    if frame is not None and frame < 0: raise ValueError('frame must be nonnegative')
+    # Optional frozen poses permit deterministic framebuffer comparisons against
+    # a full desktop GL reference; the default is still a real looping animation.
+    animation_options = ('framerate: 0, startFrame: '+str(frame)+', flags: SAF_LOOP|SAF_INSTANT'
+                         if frame is not None else 'framerate: 24, flags: SAF_LOOP|SAF_INSTANT')
     (out/'fixture.wad').write_bytes(map_data())
     png=BytesIO();Image.new('RGBA',(16,16),(128,0,200,255)).save(png,format='PNG')
     classes='version "4.12.0"\n';modeldefs='';ednums='DoomEdNums\n{\n';members=set()
@@ -56,7 +62,7 @@ def main():
 {{
  Default {{ Radius 8; Height 72; +NOGRAVITY; +DECOUPLEDANIMATIONS; }}
  States {{ Spawn:
-   TSTX A 0 SetAnimation('{clip}', framerate: 24, flags: SAF_LOOP);
+   TSTX A 0 SetAnimation('{clip}', {animation_options});
    TSTX A 1;
    Loop;
  }}
