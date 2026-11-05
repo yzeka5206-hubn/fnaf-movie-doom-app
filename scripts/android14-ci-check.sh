@@ -95,6 +95,35 @@ printf '\n=== Relevant startup / crash events ===\n'
 grep -n -i -E -C 4 'FATAL EXCEPTION|AndroidRuntime|Fatal signal|SecurityException|OriginalMenuActivity|native bridge|Chowdren|FnafMenuRunner|UnsatisfiedLinkError' "$LOG" | tail -220 || true
 "$ADB" exec-out screencap -p > "$SCREEN" || true
 printf '\n=== Diagnostic screenshot bytes: '; wc -c < "$SCREEN"
+cp "$SCREEN" "$OUT/CI-menu-main.png.apk"
+# Android's input command sends real touchscreen down/up events. Inspect each
+# frame rather than treating an Activity staying alive as proof of interaction.
+printf '\n=== Touch OPTIONS at 300,830 ===\n'
+"$ADB" shell input tap 300 830
+timeout 7 "$ADB" logcat -v threadtime >> "$LOG" || true
+"$ADB" exec-out screencap -p > "$OUT/CI-menu-options.png.apk" || true
+printf '\n=== Touch DIFFICULTY at 400,735 ===\n'
+"$ADB" shell input tap 400 735
+timeout 4 "$ADB" logcat -v threadtime >> "$LOG" || true
+"$ADB" exec-out screencap -p > "$OUT/CI-menu-difficulty.png.apk" || true
+printf '\n=== Touch BACK at 100,950; then SINGLEPLAYER at 300,640 ===\n'
+"$ADB" shell input tap 100 950
+timeout 4 "$ADB" logcat -v threadtime >> "$LOG" || true
+"$ADB" shell input tap 300 640
+timeout 7 "$ADB" logcat -v threadtime >> "$LOG" || true
+"$ADB" exec-out screencap -p > "$OUT/CI-menu-night-select.png.apk" || true
+printf '\n=== Touch NEXT NIGHT at 610,885 ===\n'
+"$ADB" shell input tap 610 885
+timeout 5 "$ADB" logcat -v threadtime >> "$LOG" || true
+"$ADB" exec-out screencap -p > "$OUT/CI-menu-night-next.png.apk" || true
+printf '\n=== Touch START at 460,885; capture game startup ===\n'
+"$ADB" shell input tap 460 885
+timeout 35 "$ADB" logcat -v threadtime >> "$LOG" || true
+"$ADB" exec-out screencap -p > "$OUT/CI-menu-game-start.png.apk" || true
+"$ADB" shell ps -A | grep -E 'fnaf.moviedoom.menutest|PID' || true
+"$ADB" shell dumpsys activity activities | grep -E 'mResumedActivity|topResumedActivity|ResumedActivity' || true
+echo '=== Activity and crash state after touch sequence ==='
+grep -n -i -E 'FATAL EXCEPTION|AndroidRuntime|Fatal signal|OriginalMenuActivity|FnafMenuRunner|com.msa.freedoom.Game|FnafMenuActivity|SDL error|UnsatisfiedLinkError' "$LOG" | tail -100 || true
 printf '\n=== Local crash report file names (if any) ===\n'
 "$ADB" shell run-as com.fnaf.moviedoom.menutest find files -maxdepth 2 -type f 2>/dev/null | head -30 || true
 printf '\n=== Android 14 diagnostic finished; emulator != Xiaomi device ===\n'
