@@ -54,7 +54,7 @@ def main():
             cls=f'SkeletalFixture{i}';folder,filename=model.rsplit('/',1)
             classes+=f'''class {cls} : Actor
 {{
- Default {{ Radius 8; Height 72; +NOGRAVITY; }}
+ Default {{ Radius 8; Height 72; +NOGRAVITY; +DECOUPLEDANIMATIONS; }}
  States {{ Spawn:
    TSTX A 0 SetAnimation('{clip}', framerate: 24, flags: SAF_LOOP);
    TSTX A 1;
