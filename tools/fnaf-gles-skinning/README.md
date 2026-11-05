@@ -51,6 +51,11 @@ its zero weights suppress animation. The MD3 addon stays loaded unchanged.
   checks the animation exists and that a requested frame is in range. Generate
   nodes with `zdbsp -X -o OUT/fixture-nodes.wad OUT/fixture.wad`, and load the
   resulting WAD and `OUT/fixture.pk3` with an independently installed IWAD.
+  For framebuffer comparisons, `--solid-skin` uses three diagnostic colors so
+  every mesh is visible. `compare_fixture_frames.py` checks that the three
+  silhouettes change; `verify_fixture_pose.py` independently projects every
+  IQM vertex at the named frame and compares the resulting silhouettes. The
+  reference unpatched GLES renderer correctly fails the animated-pose check.
   Fixtures are diagnostic only, stay local, and are neither the game nor an
   Android test. Their dummy `FrameIndex` seeds the reference engine's sprite
   hash: a `BaseFrame`-only isolated room can divide by zero during startup.
