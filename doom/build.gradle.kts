@@ -16,9 +16,9 @@ android {
         versionName = "0.9.2-animation-test"
         manifestPlaceholders["fnafAppLabel"] = "FNAF Movie Doom"
 
-        // The launcher and the game both ship ARM native libraries; do not
-        // advertise x86 ABIs merely because a transitive AndroidX AAR has one.
-        ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
+        // This animation-test candidate targets the Xiaomi 11T (ARM64).
+        // Do not package the old unpatched 32-bit engine under the new shader.
+        ndk { abiFilters += listOf("arm64-v8a") }
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

@@ -42,7 +42,6 @@ SKELETAL_SHADER_SHA256 = "72c457c6f39614b02cb5bf024b363a3375a7c79ef5385519b536a7
 NATIVE_BONE_MARKER = b"FNAF skeletal GLES palette:"
 NATIVE_LIBRARIES = (
     "lib/arm64-v8a/libuzdoom.so",
-    "lib/armeabi-v7a/libuzdoom.so",
 )
 
 

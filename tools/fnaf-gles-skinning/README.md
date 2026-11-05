@@ -27,10 +27,12 @@ its zero weights suppress animation. The MD3 addon stays loaded unchanged.
 * Engine source: `manuelsiuro/GZDoom-Android-2026` commit
   `d207c89484b8b8a1a801073c82a5121d1a42a6b5`.
 * Apply `engine.patch` from that checkout's root (`git apply engine.patch`).
-* Build both `arm64-v8a` and `armeabi-v7a` `uzdoom` with Android NDK r27d and
+* Build `arm64-v8a` `uzdoom` with Android NDK r27d and
   its `doom/src/main/jni/Application.mk`, preserving the 16K LOAD alignment and
   `-z nostart-stop-gc`. Copy the resulting libraries into the matching
-  `doom/src/main/libs/` folders. Verify ELF dependencies and exports before use.
+  `doom/src/main/libs/` folder. Verify ELF dependencies and exports before use.
+  The separate test build is restricted to ARM64 (the Xiaomi 11T); do not
+  advertise or package the original, unpatched 32-bit engine as fixed.
 * `python3 tools/fnaf-gles-skinning/patch_resource.py ORIGINAL_UZDOOM.pk3 OUTPUT.pk3`
   requires SHA-256 `ccd977bf3274d1c0bee8e01c226c356b75a8f7aeae8481a2c86b7d48bce4af47`
   and `zip`; use the generated resource as `doom/src/main/assets/uzdoom.pk3`.

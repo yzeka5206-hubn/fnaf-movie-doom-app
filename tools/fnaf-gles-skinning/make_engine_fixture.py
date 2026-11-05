@@ -48,7 +48,7 @@ def main():
     game,group,out=sys.argv[1:];out=Path(out);out.mkdir(parents=True,exist_ok=True)
     (out/'fixture.wad').write_bytes(map_data())
     png=BytesIO();Image.new('RGBA',(16,16),(128,0,200,255)).save(png,format='PNG')
-    classes='version "4.12";\n';modeldefs='';ednums='DoomEdNums\n{\n';members=set()
+    classes='version "4.12.0"\n';modeldefs='';ednums='DoomEdNums\n{\n';members=set()
     with ZipFile(game) as src, ZipFile(out/'fixture.pk3','w',ZIP_DEFLATED,compresslevel=6) as dst:
         for i,(model,clip,scale) in enumerate(GROUPS[group]):
             cls=f'SkeletalFixture{i}';folder,filename=model.rsplit('/',1)
