@@ -1,100 +1,35 @@
-plugins {
-    alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlin.compose)
-    alias(libs.plugins.kotlin.serialization)
-}
+plugins { alias(libs.plugins.android.application) }
 
+// One-time small offline updater for the 2026-11-05 Android 14 menu test.
+// This branch does not build or alter the game itself.
 android {
-    namespace = "com.msa.freedoom"
+    namespace = "com.fnaf.moviedoom.repair"
     compileSdk = 36
-
     defaultConfig {
-        applicationId = "com.fnaf.moviedoom"
+        applicationId = "com.fnaf.moviedoom.repair"
         minSdk = 33
         targetSdk = 36
-        versionCode = 10
-        versionName = "0.9.0-original-menu-test"
-        manifestPlaceholders["fnafAppLabel"] = "FNAF Movie Doom"
-
-        // The launcher and the game both ship ARM native libraries; do not
-        // advertise x86 ABIs merely because a transitive AndroidX AAR has one.
-        ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
-
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        versionCode = 1
+        versionName = "1.0"
     }
-
-    buildTypes {
-        release {
-            isMinifyEnabled = false
-            // signingConfig = signingConfigs.getByName("release")
-            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-        }
-        debug {
-            // Install the experimental menu side by side with v7. Debug keystores
-            // differ between CI runs, so never force the player to remove v7.
-            applicationIdSuffix = ".menutest"
-            manifestPlaceholders["fnafAppLabel"] = "FNAF Menü Testi"
-        }
+    sourceSets.getByName("main") {
+        manifest.srcFile("repair/AndroidManifest.xml")
+        java.setSrcDirs(listOf("repair/java"))
+        assets.setSrcDirs(listOf("repair/assets"))
+        res.setSrcDirs(emptyList<String>())
+        jniLibs.setSrcDirs(emptyList<String>())
     }
-
-    sourceSets {
-        getByName("main") {
-            jniLibs.srcDirs("src/main/libs")
-        }
-    }
-
-    packaging {
-        jniLibs {
-            // Store .so uncompressed and page-aligned so they can be mmap'd directly on
-            // 16 KB-page devices (Android 15+). Combined with the 16 KB ELF LOAD alignment
-            // (see jni/Application.mk), this makes the app 16 KB-compatible.
-            useLegacyPackaging = false
-        }
-    }
-
-    buildFeatures {
-        resValues = true
-        compose = true
-        buildConfig = true // BuildConfig.VERSION_NAME feeds the idgames API User-Agent
-    }
-
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-
 }
 
-kotlin {
-    compilerOptions {
-        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+tasks.named("assembleDebug") {
+    doLast {
+        val dir = layout.buildDirectory.dir("outputs/apk/debug").get().asFile
+        val old = dir.resolve("doom-debug.apk")
+        val named = dir.resolve("FNAF-Menu-Onarici.apk")
+        check(old.isFile && old.renameTo(named)) { "Could not name the repair APK" }
     }
-}
-
-dependencies {
-    implementation(fileTree(mapOf("dir" to "../libs", "include" to listOf("*.jar"))))
-    implementation(project(":touchcontrols"))
-    implementation(libs.androidx.appcompat)
-    implementation(libs.androidx.core.ktx)
-    implementation(libs.androidx.activity.ktx)
-    implementation(libs.androidx.fragment.ktx)
-    implementation(libs.material)
-    implementation(libs.kotlinx.coroutines.android)
-    implementation(libs.okhttp)
-    implementation(libs.kotlinx.serialization.json)
-
-    implementation(platform(libs.androidx.compose.bom))
-    implementation(libs.androidx.compose.ui)
-    implementation(libs.androidx.compose.material3)
-    implementation(libs.androidx.compose.material.icons.core)
-    implementation(libs.androidx.compose.ui.tooling.preview)
-    implementation(libs.androidx.activity.compose)
-    implementation(libs.androidx.fragment.compose)
-    implementation(libs.androidx.navigation.compose)
-    debugImplementation(libs.androidx.compose.ui.tooling)
-
-    // PNG->WAD generator (native libpng2wad.so via CMake) used by the map editor.
-    implementation(project(":png2wad-sdk"))
-
-    testImplementation(libs.junit)
 }
