@@ -154,6 +154,17 @@ def main():
     g.uniform_i(p,'uBoneIndexBase',0)
     g.buffer(7,np.array([[0,0,0,0]],np.uint8),4,0x1401,True);render((1,2,3))
     print('PASS: actor buffer bases, out-of-order draws, no-bone and zero-weight fallbacks')
+    # The engine reserves unit 16 for ShadowMap. Both samplers must coexist.
+    shadow_fragment='#version 100\nprecision highp float;\nuniform sampler2D ShadowMap;\nvarying vec4 pixelpos;\nvoid main(){gl_FragColor=vec4(pixelpos.xyz+texture2D(ShadowMap,vec2(0.5)).xyz,1.0);}'
+    sp=g.program(vert,shadow_fragment);g.glUseProgram(sp)
+    for name in ['ModelMatrix','NormalModelMatrix','ViewMatrix','NormalViewMatrix','ProjectionMatrix','TextureMatrix']:g.matrix_identity(sp,name)
+    g.uniform_i(sp,'uFnafBoneTexture',17);g.uniform_i(sp,'ShadowMap',16);g.uniform_i(sp,'uBoneIndexBase',0)
+    shadow=np.array([[[100.,200.,300.,1.]]],dtype=np.float32);g.texture(16,1,1,shadow)
+    g.glActiveTexture(0x84C0+17);g.glBindTexture(0x0DE1,bone_texture)
+    actor_slice=np.ascontiguousarray(actor_buffer[0:1]);g.glTexSubImage2D(0x0DE1,0,0,0,4,1,0x1908,0x1406,ptr(actor_slice))
+    g.buffer(7,np.array([[255,0,0,0]],np.uint8),4,0x1401,True)
+    render((111,202,303))
+    print('PASS: vertex bone unit 17 and fragment shadow unit 16 coexist')
     print('PASS: real GLSL 100, ES3 floating-point skeletal palette')
 
 if __name__=='__main__':main()
