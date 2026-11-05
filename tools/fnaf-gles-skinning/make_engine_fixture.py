@@ -75,6 +75,12 @@ def main():
             for n in src.namelist():
                 if n==model or (n.startswith(folder+'/') and n.lower().endswith(('.png','.jpg','.jpeg'))):members.add(n)
         ednums+='}\n'
+        # BaseFrame-only fixture used to leave UZDoom's sprite-model hash empty,
+        # causing division by zero before animation. Seed it with a never-spawned
+        # dummy frame; the three tested actors retain BaseFrame/SetAnimation.
+        classes+='class SkeletalFixtureHashSeed : Actor { States { Spawn: TSTX A -1; Stop; } }\n'
+        seed_folder,seed_filename=GROUPS[group][0][0].rsplit('/',1)
+        modeldefs+=f'Model SkeletalFixtureHashSeed {{ Path "{seed_folder}" Model 0 "{seed_filename}" FrameIndex TSTX A 0 0 }}\n'
         dst.writestr('ZSCRIPT',classes);dst.writestr('MODELDEF',modeldefs)
         dst.writestr('MAPINFO',ednums);dst.writestr('sprites/TSTXA0.png',png.getvalue())
         for n in sorted(members):dst.writestr(n,src.read(n))
