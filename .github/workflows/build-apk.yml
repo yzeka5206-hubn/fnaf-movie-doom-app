@@ -31,9 +31,21 @@ jobs:
       - name: Build debug APK
         run: ./gradlew :doom:assembleDebug --no-daemon --stacktrace
 
-      - name: Upload APK
+      - name: Verify animation-test APK
+        run: |
+          python3 -m unittest discover -s scripts/tests -p test_verify_fnaf_apk.py -v
+          python3 scripts/verify_fnaf_apk.py doom/build/outputs/apk/debug
+          apk=$(find doom/build/outputs/apk/debug -maxdepth 1 -name '*.apk' -type f -print -quit)
+          tools="$ANDROID_SDK_ROOT/build-tools/36.0.0"
+          "$tools/apksigner" verify --verbose --print-certs "$apk"
+          "$tools/aapt" dump badging "$apk" | grep -F "package: name='com.fnaf.moviedoom.animationtest'"
+          "$tools/zipalign" -c -P 16 -v 4 "$apk" > /dev/null
+
+      - name: Upload APK and checksum
         uses: actions/upload-artifact@v4
         with:
           name: FNAF-Movie-Doom-APK
-          path: doom/build/outputs/apk/debug/*.apk
+          path: |
+            doom/build/outputs/apk/debug/*.apk
+            doom/build/outputs/apk/debug/*.apk.sha256
           if-no-files-found: error

@@ -17,7 +17,7 @@ SMALL_ASSETS = {name: (4, magic) for name, (_, magic) in verifier.ASSETS.items()
 
 @patch.object(verifier, "SKELETAL_SHADER_SHA256", TEST_SHADER_SHA)
 class ApkVerifierTest(unittest.TestCase):
-    def make_apk(self, directory, *, marker=True, missing=None, bad_magic=None, missing_marker=None, bad_shader=False, bad_native=False, static_dex=False):
+    def make_apk(self, directory, *, marker=True, missing=None, bad_magic=None, missing_marker=None, bad_shader=False, bad_native=False, static_dex=False, extra_abi=False):
         apk = Path(directory) / "app-debug.apk"
         with zipfile.ZipFile(apk, "w") as archive:
             for name, (_, magic) in SMALL_ASSETS.items():
@@ -29,6 +29,8 @@ class ApkVerifierTest(unittest.TestCase):
             archive.writestr("assets/uzdoom.pk3", base.getvalue())
             for name in verifier.NATIVE_LIBRARIES:
                 archive.writestr(name, b"\x7fELF" + (b"old engine" if bad_native else verifier.NATIVE_BONE_MARKER))
+            if extra_abi:
+                archive.writestr("lib/armeabi-v7a/libuzdoom.so", b"\x7fELF" + verifier.NATIVE_BONE_MARKER)
             markers = b"|".join(m for m in verifier.REQUIRED_DEX_MARKERS if m != missing_marker)
             archive.writestr("classes2.dex", b"dex\n" + (markers if marker else b"old-build") + (b"fnaf-model-static-v1.pk3" if static_dex else b""))
         return apk
@@ -80,6 +82,12 @@ class ApkVerifierTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             with self.assertRaisesRegex(ValueError, "skeletal support"):
                 verifier.validate_apk(self.make_apk(temp, bad_native=True))
+
+    @patch.object(verifier, "ASSETS", SMALL_ASSETS)
+    def test_extra_unpatched_abi_rejected(self):
+        with tempfile.TemporaryDirectory() as temp:
+            with self.assertRaisesRegex(ValueError, "Unexpected native ABIs"):
+                verifier.validate_apk(self.make_apk(temp, extra_abi=True))
 
     @patch.object(verifier, "ASSETS", SMALL_ASSETS)
     def test_legacy_static_override_rejected(self):

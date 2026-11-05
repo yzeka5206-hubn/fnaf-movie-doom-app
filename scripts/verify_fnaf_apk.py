@@ -69,6 +69,13 @@ def validate_apk(apk: Path) -> dict[str, int]:
     sizes: dict[str, int] = {}
     with zipfile.ZipFile(apk) as archive:
         names = archive.namelist()
+        # This test APK intentionally supports only the target ARM64 phone.
+        # Reject stray old ARM32/x86 binaries even if Gradle filters regress.
+        native_abis = {name.split('/')[1] for name in names
+                       if name.startswith('lib/') and name.endswith('.so')
+                       and len(name.split('/')) >= 3}
+        if native_abis != {'arm64-v8a'}:
+            raise ValueError(f"Unexpected native ABIs in animation test: {sorted(native_abis)}")
         for name, (minimum, magic) in ASSETS.items():
             try:
                 entry = archive.getinfo(name)
