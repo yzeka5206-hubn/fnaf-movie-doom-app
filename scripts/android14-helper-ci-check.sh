@@ -15,7 +15,18 @@ mkdir -p "$OLD_DIR"
 curl -fsSL --retry 2 -H "Authorization: Bearer $TOKEN" -H 'Accept: application/vnd.github+json' \
   https://api.github.com/repos/yzeka5206-hubn/fnaf-movie-doom-app/actions/artifacts/13444405941/zip \
   -o "$RUNNER_TEMP/original-artifact.zip"
+curl -fsSL --retry 2 -H "Authorization: Bearer $TOKEN" -H 'Accept: application/vnd.github+json' \
+  https://api.github.com/repos/yzeka5206-hubn/fnaf-movie-doom-app/actions/artifacts/13449081664/zip \
+  -o "$RUNNER_TEMP/actual-helper.zip"
 unset TOKEN
+python3 - "$RUNNER_TEMP/actual-helper.zip" "$RUNNER_TEMP/actual-helper.apk" <<'PYHELPER'
+import sys,zipfile,shutil
+with zipfile.ZipFile(sys.argv[1]) as z:
+ names=[n for n in z.namelist() if n.endswith('FNAF-Ayar-Model-Guncelleyici.apk') and not n.startswith('/') and '..' not in n.split('/')]
+ if len(names)!=1: raise SystemExit('Unexpected helper artifact structure')
+ with z.open(names[0]) as src,open(sys.argv[2],'wb') as dst: shutil.copyfileobj(src,dst)
+PYHELPER
+echo 'cbd377195989bf26cf411c8d17088d0a003700bbd6d794fe35221c785c089ac1  '"$RUNNER_TEMP/actual-helper.apk" | sha256sum -c -
 python3 - "$RUNNER_TEMP/original-artifact.zip" "$OLD_DIR" <<'PYOLD'
 import os,sys,zipfile
 with zipfile.ZipFile(sys.argv[1]) as z:
@@ -26,7 +37,7 @@ with zipfile.ZipFile(sys.argv[1]) as z:
 PYOLD
 OLD="$OLD_DIR/old.apk"
 echo 'e279e8a9e90240e71f2c8049b4b35ecfbf083d510404ad79111ec00d593631fb  '"$OLD" | sha256sum -c -
-HELPER="$PWD/doom/build/outputs/apk/debug/FNAF-Ayar-Model-Guncelleyici.apk"
+HELPER="$RUNNER_TEMP/actual-helper.apk"
 cleanup() {
   rc=$?
   echo "=== helper test cleanup (exit $rc); emulator log tail ==="
@@ -111,28 +122,27 @@ else: raise SystemExit('prepare button not found')
 PY
 )
 printf '=== Tapping installed-APK preparation button at %s,%s ===\n' "$X" "$Y"
-timeout 90 python3 - "$ADB" > "$RUNNER_TEMP/helper-result.txt" <<'PYRESULT' & LPID=$!
-import subprocess,sys
-p=subprocess.Popen([sys.argv[1],"logcat","-v","brief","-s","FnafRepairCI:I","*:S"],stdout=subprocess.PIPE,text=True)
-try:
- for line in p.stdout:
-  if "FNAF_REPAIR_" in line:
-   print(line.strip(),flush=True);break
- else: raise RuntimeError("logcat ended before repair result")
-finally:
- p.terminate()
- try: p.wait(timeout=5)
- except subprocess.TimeoutExpired: p.kill();p.wait()
-PYRESULT
 "$ADB" shell input tap "$X" "$Y"
-# If the worker never starts, inspect the actual post-tap status instead of
-# mistaking a UI, package-visibility or launcher error for slow patching.
-sleep 5
+# The production APK has no CI-only log statements. Wait for its *published*
+# MediaStore output instead, then verify its bytes and signature below.
+python3 - "$ADB" <<'PYPUBLISHED' || {
+  echo 'Updater did not publish the target file';
+  "$ADB" shell uiautomator dump /sdcard/helper-after.xml >/dev/null || true
+  "$ADB" shell cat /sdcard/helper-after.xml || true
+  "$ADB" logcat -d -s ActivityTaskManager:I AndroidRuntime:E '*:S' | tail -120
+  exit 1
+}
+import subprocess,sys,time
+adb=sys.argv[1]; end=time.monotonic()+90
+while time.monotonic()<end:
+ result=subprocess.run([adb,'shell','test','-f','/sdcard/Download/FNAF_Ayar_Model_Test.apk'], stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+ if result.returncode==0:
+  print('Published output detected');break
+ time.sleep(2)
+else: raise SystemExit('No published APK after 90 seconds')
+PYPUBLISHED
 "$ADB" shell uiautomator dump /sdcard/helper-after.xml >/dev/null || true
 "$ADB" shell cat /sdcard/helper-after.xml || true
-wait "$LPID" || { echo 'No patch completion log'; "$ADB" logcat -d -s FnafRepairCI:I ActivityTaskManager:I AndroidRuntime:E '*:S' | tail -120; exit 1; }
-cat "$RUNNER_TEMP/helper-result.txt"
-grep -q FNAF_REPAIR_READY "$RUNNER_TEMP/helper-result.txt"
 "$ADB" pull /sdcard/Download/FNAF_Ayar_Model_Test.apk "$RUNNER_TEMP/repaired-fixture.apk" >/dev/null
 echo '2b026cbc834b15071231eaf63cbd3b2fab8f0317ae161e979033df3fa067ebef  '"$RUNNER_TEMP/repaired-fixture.apk" | sha256sum -c -
 "$ANDROID_SDK_ROOT/build-tools/36.0.0/apksigner" verify --verbose "$RUNNER_TEMP/repaired-fixture.apk" | head -4
