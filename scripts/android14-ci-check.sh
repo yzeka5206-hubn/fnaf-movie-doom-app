@@ -59,7 +59,19 @@ timeout 180 "$ADB" wait-for-device || { echo "ADB did not connect"; "$ADB" devic
 # Listen for the standard boot event; avoid hammering the emulator with polling.
 BOOT=$("$ADB" shell getprop sys.boot_completed | tr -d '\r')
 if [ "$BOOT" != 1 ]; then
-  timeout 240 bash -c '"$1" logcat -b events -v brief | grep -m 1 -E "boot_progress_enable_screen|boot_progress_launcher|am_boot_complete"' _ "$ADB" || { echo 'Boot event wait failed'; tail -80 "$RUNNER_TEMP/ci-emulator.txt"; exit 1; }
+  timeout 180 python3 - "$ADB" <<'PYBOOT'
+import subprocess,sys
+p=subprocess.Popen([sys.argv[1],"logcat","-b","events","-v","brief"],stdout=subprocess.PIPE,text=True)
+try:
+ for line in p.stdout:
+  if any(x in line for x in ("boot_progress_enable_screen","boot_progress_launcher","am_boot_complete")):
+   print(line.strip(),flush=True);break
+ else: raise RuntimeError("logcat ended before boot")
+finally:
+ p.terminate()
+ try: p.wait(timeout=5)
+ except subprocess.TimeoutExpired: p.kill();p.wait()
+PYBOOT
 fi
 printf '\n=== Device and native bridge ===\n'
 "$ADB" shell getprop ro.build.version.release
