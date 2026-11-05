@@ -37,12 +37,24 @@ ASSETS = {
     "assets/game/fnaf-model-frames-v1.pk3": (1_000_000, b"PK\x03\x04"),
 }
 
+# Known originals plus the already phone-confirmed door/frame addon. Checking
+# hashes as well as magic rejects silent asset substitutions or LFS mistakes.
+ASSET_SHA256 = {
+    "assets/game/FNAFMovie.ipk3": "018305370826b7262ec9fb1d300e27b2b95e61d146a32cf633e67d81522bcaa6",
+    "assets/game/FiveNightsAtFreddysDoomMOVIE.wad": "553ce0056d8806d87a78832d107e072374a5d78fded09937c3686ee84a74d6d8",
+    "assets/game/FiveNightsAtFreddysDoomMOVIE.pk3": "baf29b1f871aad39aee8895b2ead8edf4f48d9d1615bb1a5e79e98191e1d4ea6",
+    "assets/game/fnaf-touch-v1.pk3": "5dbdb371a9cab312998509b6eba8139184a5332731ca8f070bebe6ad2f1f5c9e",
+    "assets/game/fnaf-model-frames-v1.pk3": "cbba76cb4c8d02b80d74ab326f7b1b7fb878b870bb9d900f180f2ae3d935b806",
+}
 SHADER_MEMBER = "shaders_gles/glsl/main.vp"
 SKELETAL_SHADER_SHA256 = "72c457c6f39614b02cb5bf024b363a3375a7c79ef5385519b536a71c0bec8ab5"
 NATIVE_BONE_MARKER = b"FNAF skeletal GLES palette:"
 NATIVE_LIBRARIES = (
     "lib/arm64-v8a/libuzdoom.so",
 )
+NATIVE_SHA256 = {
+    "lib/arm64-v8a/libuzdoom.so": "f31b4a4808226ba4a912ff5d7bfe33ff2adf0f8554300d5f5db9cfa357e5c254",
+}
 
 
 def validate_skeletal_resources(archive: zipfile.ZipFile) -> None:
@@ -61,6 +73,8 @@ def validate_skeletal_resources(archive: zipfile.ZipFile) -> None:
             raise ValueError(f"Missing skeletal native library: {name}") from exc
         if not library.startswith(b"\x7fELF") or NATIVE_BONE_MARKER not in library:
             raise ValueError(f"Native library does not contain skeletal support: {name}")
+        if name in NATIVE_SHA256 and hashlib.sha256(library).hexdigest() != NATIVE_SHA256[name]:
+            raise ValueError(f"Native skeletal library checksum mismatch: {name}")
 
 
 def validate_apk(apk: Path) -> dict[str, int]:
@@ -85,8 +99,15 @@ def validate_apk(apk: Path) -> dict[str, int]:
             if entry.file_size < minimum:
                 raise ValueError(f"Game asset too small (perhaps an LFS pointer): {name}: {entry.file_size}")
             with archive.open(entry) as source:
-                if source.read(len(magic)) != magic:
+                prefix = source.read(len(magic))
+                if prefix != magic:
                     raise ValueError(f"Game asset has wrong file format: {name}")
+                if name in ASSET_SHA256:
+                    digest = hashlib.sha256(prefix)
+                    for chunk in iter(lambda: source.read(1024 * 1024), b""):
+                        digest.update(chunk)
+                    if digest.hexdigest() != ASSET_SHA256[name]:
+                        raise ValueError(f"Game asset checksum mismatch: {name}")
         validate_skeletal_resources(archive)
         dex_names = [n for n in names if n.startswith("classes") and n.endswith(".dex")]
         dex_files = [archive.read(name) for name in dex_names]

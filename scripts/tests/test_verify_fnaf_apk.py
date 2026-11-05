@@ -15,6 +15,8 @@ TEST_SHADER_SHA = hashlib.sha256(TEST_SHADER).hexdigest()
 SMALL_ASSETS = {name: (4, magic) for name, (_, magic) in verifier.ASSETS.items()}
 
 
+@patch.object(verifier, "ASSET_SHA256", {})
+@patch.object(verifier, "NATIVE_SHA256", {})
 @patch.object(verifier, "SKELETAL_SHADER_SHA256", TEST_SHADER_SHA)
 class ApkVerifierTest(unittest.TestCase):
     def make_apk(self, directory, *, marker=True, missing=None, bad_magic=None, missing_marker=None, bad_shader=False, bad_native=False, static_dex=False, extra_abi=False):
@@ -70,6 +72,22 @@ class ApkVerifierTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             with self.assertRaisesRegex(ValueError, "wrong file format"):
                 verifier.validate_apk(self.make_apk(temp, bad_magic=next(iter(SMALL_ASSETS))))
+
+    @patch.object(verifier, "ASSETS", SMALL_ASSETS)
+    def test_wrong_asset_checksum_rejected(self):
+        with tempfile.TemporaryDirectory() as temp:
+            name = next(iter(SMALL_ASSETS))
+            with patch.object(verifier, "ASSET_SHA256", {name: "0" * 64}):
+                with self.assertRaisesRegex(ValueError, "checksum mismatch"):
+                    verifier.validate_apk(self.make_apk(temp))
+
+    @patch.object(verifier, "ASSETS", SMALL_ASSETS)
+    def test_wrong_native_checksum_rejected(self):
+        with tempfile.TemporaryDirectory() as temp:
+            name = verifier.NATIVE_LIBRARIES[0]
+            with patch.object(verifier, "NATIVE_SHA256", {name: "0" * 64}):
+                with self.assertRaisesRegex(ValueError, "checksum mismatch"):
+                    verifier.validate_apk(self.make_apk(temp))
 
     @patch.object(verifier, "ASSETS", SMALL_ASSETS)
     def test_old_shader_rejected(self):
