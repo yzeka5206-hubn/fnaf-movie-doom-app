@@ -17,6 +17,10 @@ trap cleanup EXIT
 sudo chmod a+rw /dev/kvm
 echo "=== KVM diagnostic ==="
 ls -l /dev/kvm
+echo "=== Freeing unused software on disposable CI runner ==="
+df -h "$RUNNER_TEMP"
+sudo rm -rf "$ANDROID_SDK_ROOT/ndk" /usr/share/dotnet /opt/ghc /usr/local/share/boost || true
+df -h "$RUNNER_TEMP"
 "$SDKMAN" 'emulator' 'system-images;android-34;google_atd;x86_64' > "$RUNNER_TEMP/helper-sdk.txt" 2>&1 || { tail -40 "$RUNNER_TEMP/helper-sdk.txt"; exit 1; }
 "$EMU" -accel-check || true
 "$ADB" start-server
@@ -47,7 +51,7 @@ PlayStore.enabled=false
 vm.heapSize=256
 EOF
 "$EMU" -list-avds
-"$EMU" -avd helperAndroid14 -no-window -no-snapshot -no-audio -no-boot-anim -gpu swiftshader_indirect -memory 1536 -cores 2 -verbose > "$RUNNER_TEMP/helper-emulator.txt" 2>&1 & EPID=$!
+"$EMU" -avd helperAndroid14 -no-window -no-snapshot -no-audio -no-boot-anim -gpu swiftshader_indirect -memory 1536 -cores 2 > "$RUNNER_TEMP/helper-emulator.txt" 2>&1 & EPID=$!
 timeout 120 "$ADB" wait-for-device || { echo "ADB did not connect"; "$ADB" devices -l; exit 1; }
 BOOT=$("$ADB" shell getprop sys.boot_completed | tr -d '\r')
 if [ "$BOOT" != 1 ]; then
