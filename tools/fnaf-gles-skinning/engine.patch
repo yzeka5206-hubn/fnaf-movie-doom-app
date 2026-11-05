@@ -1,0 +1,177 @@
+diff --git a/doom/src/main/jni/engine/gzdoom/src/common/rendering/gles/gles_buffers.cpp b/doom/src/main/jni/engine/gzdoom/src/common/rendering/gles/gles_buffers.cpp
+index 54d700c..52c329e 100644
+--- a/doom/src/main/jni/engine/gzdoom/src/common/rendering/gles/gles_buffers.cpp
++++ b/doom/src/main/jni/engine/gzdoom/src/common/rendering/gles/gles_buffers.cpp
+@@ -301,11 +301,14 @@ void GLVertexBuffer::Bind(int *offsets)
+ 			size_t ofs = offsets == nullptr ? attrinf.offset : attrinf.offset + mStride * offsets[attrinf.bindingpoint];
+ 			if (!attrinf.integerType)
+ 				glVertexAttribPointer(i, attrinf.size, attrinf.format, attrinf.normalize, (GLsizei)mStride, (void*)(intptr_t)ofs);
+-			else
++			else if (gles.fnafBoneTextureSupport && i == VATTR_BONESELECTOR)
+ 			{
+-				if (gles.glesMode >= GLES_MODE_OGL3)
+-					glVertexAttribIPointer(i, attrinf.size, attrinf.format, (GLsizei)mStride, (void*)(intptr_t)ofs);
++				// GLSL 100 has no integer attributes: convert the raw, unnormalized
++				// UBYTE indices to exact float values in the range 0..255.
++				glVertexAttribPointer(i, attrinf.size, attrinf.format, GL_FALSE, (GLsizei)mStride, (void*)(intptr_t)ofs);
+ 			}
++			else if (gles.glesMode >= GLES_MODE_OGL3)
++				glVertexAttribIPointer(i, attrinf.size, attrinf.format, (GLsizei)mStride, (void*)(intptr_t)ofs);
+ 		}
+ 		i++;
+ 	}
+diff --git a/doom/src/main/jni/engine/gzdoom/src/common/rendering/gles/gles_renderstate.cpp b/doom/src/main/jni/engine/gzdoom/src/common/rendering/gles/gles_renderstate.cpp
+index a6ff91a..57c1162 100644
+--- a/doom/src/main/jni/engine/gzdoom/src/common/rendering/gles/gles_renderstate.cpp
++++ b/doom/src/main/jni/engine/gzdoom/src/common/rendering/gles/gles_renderstate.cpp
+@@ -56,6 +56,11 @@ static void matrixToGL(const VSMatrix &mat, int loc)
+ void FGLRenderState::Reset()
+ {
+ 	FRenderState::Reset();
++	if (mFnafBoneTexture)
++	{
++		glDeleteTextures(1, &mFnafBoneTexture);
++		mFnafBoneTexture = 0;
++	}
+ 	mVertexBuffer = mCurrentVertexBuffer = nullptr;
+ 	mGlossiness = 0.0f;
+ 	mSpecularLevel = 0.0f;
+@@ -338,7 +343,40 @@ bool FGLRenderState::ApplyShader()
+ 		activeShader->cur->muLightRange.Set(range);
+ 	}
+ 
+-	if (gles.glesMode >= GLES_MODE_OGL3)
++	if (gles.fnafBoneTextureSupport && mBoneIndexBase >= 0)
++	{
++		// A per-draw palette avoids overflowing a uniform array when multiple
++		// skinned actors are visible. Index 0 below means this actor's first
++		// bone, NOT the beginning of the shared frame buffer.
++		const int available = screen->mBones->GetCurrentIndex() - mBoneIndexBase;
++		const int count = std::min(available, FNAF_BONE_PALETTE_ROWS);
++		if (count > 0 && activeShader->cur->fnaf_bone_texture_index >= 0)
++		{
++			const float* bones = static_cast<const float*>(screen->mBones->GetBuffer()->Memory())
++				+ mBoneIndexBase * 16;
++			GLint previousTexture = GL_TEXTURE0;
++			glGetIntegerv(GL_ACTIVE_TEXTURE, &previousTexture);
++			glActiveTexture(GL_TEXTURE0 + FNAF_BONE_TEXTURE_UNIT);
++			if (!mFnafBoneTexture)
++			{
++				glGenTextures(1, &mFnafBoneTexture);
++				glBindTexture(GL_TEXTURE_2D, mFnafBoneTexture);
++				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
++				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
++				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
++				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
++				// GL_RGBA32F is core in ES3; the bundled GLES2 header omits its name.
++				glTexImage2D(GL_TEXTURE_2D, 0, 0x8814, 4, FNAF_BONE_PALETTE_ROWS,
++					0, GL_RGBA, GL_FLOAT, nullptr);
++			}
++			else glBindTexture(GL_TEXTURE_2D, mFnafBoneTexture);
++			glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 4, count, GL_RGBA, GL_FLOAT, bones);
++			glActiveTexture(previousTexture);
++			glUniform1i(activeShader->cur->fnaf_bone_texture_index, FNAF_BONE_TEXTURE_UNIT);
++			activeShader->cur->muBoneIndexBase.Set(0);
++		}
++	}
++	else if (gles.glesMode >= GLES_MODE_OGL3)
+ 	{
+ 		// Upload bone data
+ 		// NOTE, this is pretty inefficient, it will be reloading the same data over and over in a single frame
+diff --git a/doom/src/main/jni/engine/gzdoom/src/common/rendering/gles/gles_renderstate.h b/doom/src/main/jni/engine/gzdoom/src/common/rendering/gles/gles_renderstate.h
+index e2d2956..a53f741 100644
+--- a/doom/src/main/jni/engine/gzdoom/src/common/rendering/gles/gles_renderstate.h
++++ b/doom/src/main/jni/engine/gzdoom/src/common/rendering/gles/gles_renderstate.h
+@@ -62,6 +62,7 @@ class FGLRenderState final : public FRenderState
+ 	int maxBoundMaterial = -1;
+ 	size_t mLastMappedLightIndex = SIZE_MAX;
+ 	size_t mLastMappedBoneIndexBase = SIZE_MAX;
++	unsigned int mFnafBoneTexture = 0; // lazily created in the current GL context
+ 
+ 	IVertexBuffer *mCurrentVertexBuffer;
+ 	int mCurrentVertexOffsets[2];	// one per binding point
+diff --git a/doom/src/main/jni/engine/gzdoom/src/common/rendering/gles/gles_shader.cpp b/doom/src/main/jni/engine/gzdoom/src/common/rendering/gles/gles_shader.cpp
+index eee061a..99cb94e 100644
+--- a/doom/src/main/jni/engine/gzdoom/src/common/rendering/gles/gles_shader.cpp
++++ b/doom/src/main/jni/engine/gzdoom/src/common/rendering/gles/gles_shader.cpp
+@@ -614,6 +614,7 @@ bool FShader::Load(const char * name, const char * vert_prog_lump_, const char *
+ 
+ 	shaderData->lights_index = glGetUniformLocation(shaderData->hShader, "lights");
+ 	shaderData->bones_index = glGetUniformLocation(shaderData->hShader, "bones");
++	shaderData->fnaf_bone_texture_index = glGetUniformLocation(shaderData->hShader, "uFnafBoneTexture");
+ 	shaderData->modelmatrix_index = glGetUniformLocation(shaderData->hShader, "ModelMatrix");
+ 	shaderData->texturematrix_index = glGetUniformLocation(shaderData->hShader, "TextureMatrix");
+ 	shaderData->normalmodelmatrix_index = glGetUniformLocation(shaderData->hShader, "NormalModelMatrix");
+@@ -678,6 +679,7 @@ bool FShader::Bind(ShaderFlavourData& flavour)
+ 	{
+ 		FString variantConfig = "\n";
+ 
++		if (gles.fnafBoneTextureSupport) variantConfig << "#define FNAF_BONE_TEXTURE 1\n";
+ 		variantConfig.AppendFormat("#define MAXIMUM_LIGHT_VECTORS %d\n", gles.numlightvectors);
+ 		variantConfig.AppendFormat("#define DEF_TEXTURE_MODE %d\n", flavour.textureMode);
+ 		variantConfig.AppendFormat("#define DEF_TEXTURE_FLAGS %d\n", flavour.texFlags);
+diff --git a/doom/src/main/jni/engine/gzdoom/src/common/rendering/gles/gles_shader.h b/doom/src/main/jni/engine/gzdoom/src/common/rendering/gles/gles_shader.h
+index 17b47b0..31c95b2 100644
+--- a/doom/src/main/jni/engine/gzdoom/src/common/rendering/gles/gles_shader.h
++++ b/doom/src/main/jni/engine/gzdoom/src/common/rendering/gles/gles_shader.h
+@@ -356,6 +356,7 @@ public: class ShaderVariantData
+ 
+ 		int lights_index = 0;
+ 		int bones_index = 0;
++		int fnaf_bone_texture_index = -1;
+ 		int modelmatrix_index = 0;
+ 		int normalmodelmatrix_index = 0;
+ 		int texturematrix_index = 0;
+diff --git a/doom/src/main/jni/engine/gzdoom/src/common/rendering/gles/gles_system.cpp b/doom/src/main/jni/engine/gzdoom/src/common/rendering/gles/gles_system.cpp
+index 41634a3..53ccacd 100644
+--- a/doom/src/main/jni/engine/gzdoom/src/common/rendering/gles/gles_system.cpp
++++ b/doom/src/main/jni/engine/gzdoom/src/common/rendering/gles/gles_system.cpp
+@@ -214,6 +214,23 @@ namespace OpenGLESRenderer
+ 		}
+ 
+ 
++		// The mobile backend requests an ES 3.1 context but deliberately uses
++		// GLSL 100.  Its old path never uploaded skeletal bones.  Vertex float
++		// textures are core in ES3 and avoid the much smaller uniform limit.
++		gles.fnafBoneTextureSupport = false;
++		if (gles.glesMode == GLES_MODE_GLES)
++		{
++			const char* v = glVersionStr + strlen("OpenGL ES");
++			const double esVersion = strtod(v, nullptr);
++			GLint vertexUnits = 0, combinedUnits = 0;
++			glGetIntegerv(GL_MAX_VERTEX_TEXTURE_IMAGE_UNITS, &vertexUnits);
++			glGetIntegerv(GL_MAX_COMBINED_TEXTURE_IMAGE_UNITS, &combinedUnits);
++			gles.fnafBoneTextureSupport = esVersion >= 3.0 && vertexUnits > 0 &&
++				combinedUnits > FNAF_BONE_TEXTURE_UNIT;
++			Printf("FNAF skeletal GLES palette: %s (ES %.1f, vertex units %d, combined units %d)\n",
++				gles.fnafBoneTextureSupport ? "enabled" : "unsupported", esVersion, vertexUnits, combinedUnits);
++		}
++
+ 		if (gles.glesMode == GLES_MODE_GLES)
+ 		{
+ 			Printf("GLES choosing mode: GLES_MODE_GLES\n");
+diff --git a/doom/src/main/jni/engine/gzdoom/src/common/rendering/gles/gles_system.h b/doom/src/main/jni/engine/gzdoom/src/common/rendering/gles/gles_system.h
+index 4432a50..5c0e299 100644
+--- a/doom/src/main/jni/engine/gzdoom/src/common/rendering/gles/gles_system.h
++++ b/doom/src/main/jni/engine/gzdoom/src/common/rendering/gles/gles_system.h
+@@ -116,6 +116,8 @@ namespace OpenGLESRenderer
+ 		bool forceGLSLv100;
+ 		bool depthClampAvailable;
+ 		bool anistropicFilterAvailable;
++		// An ES3 vertex texture carries one actor's skeletal palette per draw.
++		bool fnafBoneTextureSupport;
+ 		int glesMode;
+ 		const char* shaderVersionString;
+ 		int max_texturesize;
+@@ -123,6 +125,11 @@ namespace OpenGLESRenderer
+ 		char* modelstring;
+ 	};
+ 
++	// IQM selectors are unsigned bytes.  One texture row per possible joint.
++	static constexpr int FNAF_BONE_PALETTE_ROWS = 256;
++	// 0..15 are material units, 16 is reserved for ShadowMap.
++	static constexpr int FNAF_BONE_TEXTURE_UNIT = 17;
++
+ 	extern RenderContextGLES gles;
+ 
+ 	void InitGLES();

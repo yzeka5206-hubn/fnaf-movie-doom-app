@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import sys
 import zipfile
 from pathlib import Path
@@ -22,7 +23,6 @@ REQUIRED_DEX_MARKERS = (
     b"FnafUiStateReader",
     b"FnafTouchPing",
     b"FnafPauseTap",
-    b"fnaf-model-static-v1.pk3",
     b"fnaf-model-frames-v1.pk3",
     b"fnafCommitText",
     b"SAAT",
@@ -36,6 +36,32 @@ ASSETS = {
     "assets/game/fnaf-model-static-v1.pk3": (1_000_000, b"PK\x03\x04"),
     "assets/game/fnaf-model-frames-v1.pk3": (1_000_000, b"PK\x03\x04"),
 }
+
+SHADER_MEMBER = "shaders_gles/glsl/main.vp"
+SKELETAL_SHADER_SHA256 = "72c457c6f39614b02cb5bf024b363a3375a7c79ef5385519b536a71c0bec8ab5"
+NATIVE_BONE_MARKER = b"FNAF skeletal GLES palette:"
+NATIVE_LIBRARIES = (
+    "lib/arm64-v8a/libuzdoom.so",
+    "lib/armeabi-v7a/libuzdoom.so",
+)
+
+
+def validate_skeletal_resources(archive: zipfile.ZipFile) -> None:
+    try:
+        resource = archive.read("assets/uzdoom.pk3")
+        with zipfile.ZipFile(io.BytesIO(resource)) as base:
+            shader = base.read(SHADER_MEMBER)
+    except (KeyError, zipfile.BadZipFile) as exc:
+        raise ValueError("Missing or invalid skeletal GLES base shader") from exc
+    if hashlib.sha256(shader).hexdigest() != SKELETAL_SHADER_SHA256:
+        raise ValueError("Skeletal GLES base shader does not match this build")
+    for name in NATIVE_LIBRARIES:
+        try:
+            library = archive.read(name)
+        except KeyError as exc:
+            raise ValueError(f"Missing skeletal native library: {name}") from exc
+        if not library.startswith(b"\x7fELF") or NATIVE_BONE_MARKER not in library:
+            raise ValueError(f"Native library does not contain skeletal support: {name}")
 
 
 def validate_apk(apk: Path) -> dict[str, int]:
@@ -55,8 +81,12 @@ def validate_apk(apk: Path) -> dict[str, int]:
             with archive.open(entry) as source:
                 if source.read(len(magic)) != magic:
                     raise ValueError(f"Game asset has wrong file format: {name}")
+        validate_skeletal_resources(archive)
         dex_names = [n for n in names if n.startswith("classes") and n.endswith(".dex")]
         dex_files = [archive.read(name) for name in dex_names]
+        # The old static Abby/car poses must not be passed as runtime mods.
+        if any(b"fnaf-model-static-v1.pk3" in dex for dex in dex_files):
+            raise ValueError("Legacy static model override is still loaded by the app")
         for marker in REQUIRED_DEX_MARKERS:
             if not any(marker in dex for dex in dex_files):
                 raise ValueError(f"Required build marker not found in APK dex files: {marker!r}")
@@ -80,7 +110,7 @@ def main() -> int:
                 digest.update(chunk)
         checksum = apk.with_name(apk.name + ".sha256")
         checksum.write_text(f"{digest.hexdigest()}  {apk.name}\n", encoding="utf-8")
-        print(f"Verified {apk.name}: native menu, direct-touch controls, bundled adapter and real game assets present")
+        print(f"Verified {apk.name}: native menu, touch controls, skeletal resources and game assets present")
         for name, size in sizes.items():
             print(f"  {name}: {size} bytes")
         print(f"SHA-256: {digest.hexdigest()}")

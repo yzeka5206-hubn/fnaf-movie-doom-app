@@ -1,13 +1,14 @@
 # Temporary static models for GLES
 
-`fnaf-model-static-v1.pk3` is loaded **after** the original game archive. It
-contains only four model overrides: Abby's world model, legs and flashlight
+Historically, `fnaf-model-static-v1.pk3` was loaded after the game archive. It
+is **not loaded** by the experimental skeletal build; its zero weights would
+mask the new animations. The retained artifact is only a historical fallback and
+regression reference. It contains only four model overrides: Abby's world model, legs and flashlight
 arm, plus `CarScene2` used by `MikeNewCarScene` in the OUTSIDE intro script.
 The original archive is not modified. Abby uses original frame 0; the opening
 car uses original frame 700, near its arrival point. These are deliberately
-**static**, not a fix for skeletal animation. The car will not travel through
-the intro; timing and early camera shots may look different. Remove this entire
-addon and its launcher references when real skeletal animation is working.
+**static**, not a fix for skeletal animation. In that historical build the car
+did not travel through the intro; timing and early camera shots could differ.
 
 Rebuild with `numpy` and the exact original game PK3:
 
@@ -15,7 +16,6 @@ Rebuild with `numpy` and the exact original game PK3:
 python3 tools/fnaf-model-fallback/build.py /path/to/FiveNightsAtFreddysDoomMOVIE.pk3
 ```
 
-Update `STATIC_MODELS` length in `FnafBundledGame.kt` if output size changes.
 The tool checks the input's SHA-256 and verifies Abby's baked bounding boxes
 against the original frame metadata. It preserves names, UVs, textures,
 triangles, joints and animation metadata, baking only positions and normals
@@ -31,5 +31,5 @@ is **not** a substitute for testing on the Xiaomi/Android binary, the real
 selector or the original intro camera timing.
 
 Automated checks: `FNAF_ORIGINAL_PK3=/path/to/game.pk3 python3 -m unittest
-scripts.tests.test_fnaf_static_models -v` validates archive paths, load order,
+scripts.tests.test_fnaf_static_models -v` validates archive paths, confirms the addon is not loaded,
 zero weights, bounds, and that only geometry/normals/weights changed.

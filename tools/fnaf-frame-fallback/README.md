@@ -1,8 +1,8 @@
 # GLES vertex-frame animation fallback (partial)
 
-The Android renderer's GLES 2 path does not apply IQM skeletal animation.
-`fnaf-model-frames-v1.pk3` is loaded *after* the original game and the static
-model addon. It replaces only these actors' `MODELDEF` mappings with MD3 files
+The original Android GLES path did not apply IQM skeletal animation.
+`fnaf-model-frames-v1.pk3` is loaded *after* the original game. The separate
+static model addon is no longer loaded by the experimental skeletal build. It replaces only these actors' `MODELDEF` mappings with MD3 files
 baked from the original IQM frames:
 
 | Actor | Source frames | Approx. GPU vertex buffer |
@@ -24,8 +24,8 @@ original `CYBA A` loop state, which otherwise references past IQM frame 25.
 **Not a general skeletal-animation fix.** The main Freddy, Bonnie, Chica, Foxy,
 Abby and curtains use named `SetAnimation` sequences and are *not* fixed by
 these MD3 substitutions. The opening car uses frame indices but is too large
-for this limited conversion; Abby and the car still use the separate static
-fallback. Do not claim that all animations work.
+for this limited conversion. The separate experimental engine patch attempts to
+support these directly; it still requires real-game and device verification.
 
 Rebuild, with NumPy and the exact original game archive:
 

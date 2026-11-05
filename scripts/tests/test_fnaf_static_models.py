@@ -36,10 +36,12 @@ def info(model):
 class StaticModelsTests(unittest.TestCase):
     def test_packaging_and_position_bounds(self):
         sizes = (ROOT / 'doom/src/main/java/com/msa/freedoom/FnafBundledGame.kt').read_text().replace('_', '')
-        self.assertIn(f'STATICMODELS to {ASSET.stat().st_size}L', sizes)
-        self.assertIn('listOf(WAD, PK3, TOUCH, STATICMODELS, FRAMEMODELS)', sizes)
+        # The historical artifact remains available for comparison, but is
+        # neither extracted nor loaded: it would mask the new skeletons.
+        self.assertNotIn('STATICMODELS', sizes)
+        self.assertIn('listOf(WAD, PK3, TOUCH, FRAMEMODELS)', sizes)
         utils = (ROOT / 'doom/src/main/java/com/msa/freedoom/Utils.kt').read_text()
-        self.assertIn('copyBundledAddon(responsibleActivity, fullModDir, "fnaf-model-static-v1.pk3")', utils)
+        self.assertNotIn('copyBundledAddon(responsibleActivity, fullModDir, "fnaf-model-static-v1.pk3")', utils)
         with zipfile.ZipFile(ASSET) as archive:
             self.assertEqual(set(archive.namelist()), set(MODELS))
             self.assertIsNone(archive.testzip())

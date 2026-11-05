@@ -41,7 +41,8 @@ class FrameModelTests(unittest.TestCase):
     def test_bundle_and_modeldefs(self):
         kotlin = (ROOT / 'doom/src/main/java/com/msa/freedoom/FnafBundledGame.kt').read_text().replace('_', '')
         self.assertIn(f'FRAMEMODELS to {ASSET.stat().st_size}L', kotlin)
-        self.assertIn('STATICMODELS, FRAMEMODELS', kotlin)
+        self.assertIn('listOf(WAD, PK3, TOUCH, FRAMEMODELS)', kotlin)
+        self.assertNotIn('STATICMODELS', kotlin)
         self.assertIn('copyBundledAddon(responsibleActivity, fullModDir, "fnaf-model-frames-v1.pk3")',
                       (ROOT / 'doom/src/main/java/com/msa/freedoom/Utils.kt').read_text())
         with zipfile.ZipFile(ASSET) as z:

@@ -8,18 +8,17 @@ object FnafBundledGame {
     const val WAD = "mods/FiveNightsAtFreddysDoomMOVIE.wad"
     const val PK3 = "mods/FiveNightsAtFreddysDoomMOVIE.pk3"
     const val TOUCH = "mods/fnaf-touch-v1.pk3"
-    // Temporary static poses for the opening car and Abby, loaded after the
-    // original models. Remove this addon when skeletal animation is fixed.
-    const val STATIC_MODELS = "mods/fnaf-model-static-v1.pk3"
+    // Keep the five verified MD3 replacements, including the working door.
+    // Do not load the legacy static-model addon, which overwrites Abby and the
+    // opening car with zero-weight poses and masks skeletal animation.
     const val FRAME_MODELS = "mods/fnaf-model-frames-v1.pk3"
-    val modPaths = listOf(WAD, PK3, TOUCH, STATIC_MODELS, FRAME_MODELS)
+    val modPaths = listOf(WAD, PK3, TOUCH, FRAME_MODELS)
 
     private val requiredSizes = linkedMapOf(
         IWAD to 66_904L,
         WAD to 37_464_359L,
         PK3 to 207_026_277L,
         TOUCH to 3088L,
-        STATIC_MODELS to 5_280_952L,
         FRAME_MODELS to 3_102_762L,
     )
 

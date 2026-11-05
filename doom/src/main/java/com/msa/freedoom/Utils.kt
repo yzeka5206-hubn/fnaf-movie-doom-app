@@ -76,7 +76,6 @@ object Utils {
         copyGameAsset(responsibleActivity, "game/FiveNightsAtFreddysDoomMOVIE.wad", fullModDir)
         copyGameAsset(responsibleActivity, "game/FiveNightsAtFreddysDoomMOVIE.pk3", fullModDir)
         copyBundledAddon(responsibleActivity, fullModDir, "fnaf-touch-v1.pk3")
-        copyBundledAddon(responsibleActivity, fullModDir, "fnaf-model-static-v1.pk3")
         copyBundledAddon(responsibleActivity, fullModDir, "fnaf-model-frames-v1.pk3")
         // This optional addon is not bundled in every build. Its absence must
         // not stop a fresh install from launching the required movie packages.
