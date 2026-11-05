@@ -10,11 +10,11 @@ from pathlib import Path
 BUILD_MARKER = b"FNAF_DIAG_V7_2026"
 REQUIRED_DEX_MARKERS = (
     BUILD_MARKER,
-    b"0.8.0-menu",
     b"0.9.1-touch-test",
     b"FnafMenuActivity",
     b"FnafOptionsActivity",
-    b"OYUN HAZIRLANIYOR",
+    b"OriginalMenuActivity",
+    "Özgün menü hazırlanıyor...".encode("utf-8"),
     b"LatchingSwitch",
     b"forwardSoftEnter",
     b"FNAF_SYSTEM_KEYBOARD_V7",
@@ -23,6 +23,7 @@ REQUIRED_DEX_MARKERS = (
     b"FnafTouchPing",
     b"fnafCommitText",
     b"SAAT",
+    b"KOS",
 )
 ASSETS = {
     "assets/game/FNAFMovie.ipk3": (10_000, b"PK\x03\x04"),
