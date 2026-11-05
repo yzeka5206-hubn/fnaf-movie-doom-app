@@ -11,7 +11,7 @@ from zipfile import ZipFile, ZIP_DEFLATED
 from io import BytesIO
 import struct, sys
 from PIL import Image
-from test_models import PLAYER_NAMES
+from test_models import PLAYER_NAMES, header, animations
 
 GROUPS={n:[(f'Characters/Players/{n}/{model}','Walk',1.2 if i<2 else 1.0) for i,model in enumerate(models)]
         for n,models in PLAYER_NAMES.items()}
@@ -57,6 +57,14 @@ def main():
     classes='version "4.12.0"\n';modeldefs='';ednums='DoomEdNums\n{\n';members=set()
     with ZipFile(game) as src, ZipFile(out/'fixture.pk3','w',ZIP_DEFLATED,compresslevel=6) as dst:
         for i,(model,clip,scale) in enumerate(GROUPS[group]):
+            # Fail early rather than accepting a test room whose named pose is
+            # absent (the engine otherwise prints a warning and shows no motion).
+            model_bytes=src.read(model)
+            matches=[entry for entry in animations(model_bytes,header(model_bytes)) if entry[0]==clip]
+            if len(matches)!=1:
+                raise ValueError(f'{model}: expected exactly one {clip!r} animation, found {len(matches)}')
+            if frame is not None and frame >= matches[0][2]:
+                raise ValueError(f'{model}: {clip} has {matches[0][2]} frames; requested {frame}')
             cls=f'SkeletalFixture{i}';folder,filename=model.rsplit('/',1)
             classes+=f'''class {cls} : Actor
 {{
