@@ -21,7 +21,7 @@ index 54d700c..52c329e 100644
  		i++;
  	}
 diff --git a/doom/src/main/jni/engine/gzdoom/src/common/rendering/gles/gles_renderstate.cpp b/doom/src/main/jni/engine/gzdoom/src/common/rendering/gles/gles_renderstate.cpp
-index a6ff91a..9c0408b 100644
+index a6ff91a..bcb09a8 100644
 --- a/doom/src/main/jni/engine/gzdoom/src/common/rendering/gles/gles_renderstate.cpp
 +++ b/doom/src/main/jni/engine/gzdoom/src/common/rendering/gles/gles_renderstate.cpp
 @@ -56,6 +56,11 @@ static void matrixToGL(const VSMatrix &mat, int loc)
@@ -52,7 +52,7 @@ index a6ff91a..9c0408b 100644
 +		const int capacity = static_cast<int>(boneBuffer->Size() / (16 * sizeof(float)));
 +		const int available = std::min(screen->mBones->GetCurrentIndex(), capacity) - mBoneIndexBase;
 +		const int count = std::min(available, FNAF_BONE_PALETTE_ROWS);
-+		if (count > 0 && activeShader->cur->fnaf_bone_texture_index >= 0)
++		if (count > 0 && boneBuffer->Memory() && activeShader->cur->fnaf_bone_texture_index >= 0)
 +		{
 +			const float* bones = static_cast<const float*>(boneBuffer->Memory())
 +				+ mBoneIndexBase * 16;
