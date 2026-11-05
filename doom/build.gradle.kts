@@ -14,6 +14,7 @@ android {
         targetSdk = 36
         versionCode = 10
         versionName = "0.9.0-original-menu-test"
+        manifestPlaceholders["fnafAppLabel"] = "FNAF Movie Doom"
 
         // The launcher and the game both ship ARM native libraries; do not
         // advertise x86 ABIs merely because a transitive AndroidX AAR has one.
@@ -29,7 +30,10 @@ android {
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
         debug {
-            // signingConfig = signingConfigs.getByName("release")
+            // Install the experimental menu side by side with v7. Debug keystores
+            // differ between CI runs, so never force the player to remove v7.
+            applicationIdSuffix = ".menutest"
+            manifestPlaceholders["fnafAppLabel"] = "FNAF Menü Testi"
         }
     }
 

@@ -37,10 +37,17 @@ The Android application itself is built separately with Gradle.
   default). Original launcher options are kept inside the launcher. The
   separately added YEDEK button opens the app's save/restore screen.
 * No game model/animation fixes are claimed in this menu prototype.
+* Debug APK has the separate application ID `com.fnaf.moviedoom.menutest` and
+  label `FNAF Menü Testi`, so v7 can remain installed; its files and saves are
+  separate and are not automatically copied. Each CI run may use a different
+  debug signing key. This is a test-only package, not a stable update channel.
 
-Run `python3 tools/original-menu/test-contract.py` and
+Run `python3 tools/original-menu/test-contract.py`,
+`python3 scripts/tests/test_menu_touch_host.py`, and
 `python3 -m unittest discover -s scripts/tests -p 'test*.py'` for host
-checks. If `glslangValidator` is on PATH, all 37 converted shader pairs are
+checks. `scripts/tests/run_host_controls.sh` additionally tests the v7 controls
+and keyboard using the host JVM and minimal Android fakes. If
+`glslangValidator` is on PATH, all 37 converted shader pairs are
 compiled and linked in the former; Java/JDK and `readelf` are also required.
 The script reports its 360 selection combinations separately. None of these
 tests implies successful execution on Android.

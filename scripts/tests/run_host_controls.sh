@@ -41,6 +41,7 @@ java -cp "$T/fakes" org.libsdl.app2012.SoftKeyboardHostTest
 # comes first at compile time; fake Android classes execute it on the host.
 mkdir -p "$T/bridge"
 javac -encoding UTF-8 -source 11 -target 11 -cp "$ANDROID_JAR:$T/fakes" -d "$T/bridge" \
+  "$ROOT/doom/src/main/java/com/msa/freedoom/FnafLaunchProfile.java" \
   "$ROOT/doom/src/main/java/org/libsdl/app/SDLOpenTouch.java"
 javac -encoding UTF-8 -source 11 -target 11 -cp "$T/bridge:$T/fakes" -d "$T/bridge" \
   "$ROOT/scripts/tests/KeyboardBridgeHostTest.java"

@@ -39,7 +39,7 @@
     <application
         android:banner="@drawable/banner"
         android:icon="@drawable/launch"
-        android:label="@string/app_name"
+        android:label="${fnafAppLabel}"
         android:largeHeap="true"
         android:supportsRtl="true"
         android:theme="@style/AppTheme">

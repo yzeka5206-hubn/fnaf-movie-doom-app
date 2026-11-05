@@ -9,6 +9,12 @@ ANDROID = '{http://schemas.android.com/apk/res/android}'
 
 
 class MenuContractTest(unittest.TestCase):
+    def test_debug_package_is_separate_from_v7(self):
+        gradle = (ROOT / 'doom/build.gradle.kts').read_text()
+        self.assertIn('applicationId = "com.fnaf.moviedoom"', gradle)
+        self.assertIn('applicationIdSuffix = ".menutest"', gradle)
+        self.assertIn('FNAF Menü Testi', gradle)
+
     def test_one_launcher_is_the_native_landscape_menu(self):
         manifest = ET.parse(ROOT / 'doom/src/main/AndroidManifest.xml').getroot()
         activities = manifest.findall('./application/activity')

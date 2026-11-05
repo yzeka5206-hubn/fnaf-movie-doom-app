@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Verify the exact experimental APK's contents; NOT an Android runtime test."""
 import hashlib
+import shutil
 import struct
+import subprocess
 import sys
 import zipfile
 from pathlib import Path
@@ -10,6 +12,11 @@ if len(sys.argv) != 2:
     raise SystemExit('Usage: verify-apk.py path/to/doom-debug.apk')
 APK = Path(sys.argv[1])
 ROOT = Path(__file__).resolve().parents[2]
+if shutil.which('aapt'):
+    badging = subprocess.check_output(['aapt', 'dump', 'badging', str(APK)], text=True)
+    assert "package: name='com.fnaf.moviedoom.menutest'" in badging, 'Test must not overwrite v7'
+    assert "sdkVersion:'33'" in badging
+    print('PACKAGE OK: side-by-side com.fnaf.moviedoom.menutest, API 33+')
 assets = {
     'assets/game/FNAFMovie.ipk3': '018305370826b7262ec9fb1d300e27b2b95e61d146a32cf633e67d81522bcaa6',
     'assets/game/FiveNightsAtFreddysDoomMOVIE.pk3': 'baf29b1f871aad39aee8895b2ead8edf4f48d9d1615bb1a5e79e98191e1d4ea6',
