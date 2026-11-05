@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 SDKMAN="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
-AVDMAN="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/avdmanager"
 EMU="$ANDROID_SDK_ROOT/emulator/emulator"
 ADB="$ANDROID_SDK_ROOT/platform-tools/adb"
 FIX="$PWD/doom/repair/fixtures"
@@ -18,10 +17,36 @@ trap cleanup EXIT
 sudo chmod a+rw /dev/kvm
 echo "=== KVM diagnostic ==="
 ls -l /dev/kvm
+"$SDKMAN" 'emulator' 'system-images;android-34;google_atd;x86_64' > "$RUNNER_TEMP/helper-sdk.txt" 2>&1 || { tail -40 "$RUNNER_TEMP/helper-sdk.txt"; exit 1; }
 "$EMU" -accel-check || true
 "$ADB" start-server
-"$SDKMAN" 'system-images;android-34;google_atd;x86_64' > "$RUNNER_TEMP/helper-sdk.txt" 2>&1 || { tail -40 "$RUNNER_TEMP/helper-sdk.txt"; exit 1; }
-printf 'no\n' | "$AVDMAN" create avd --force --name helperAndroid14 --package 'system-images;android-34;google_atd;x86_64' --device 'pixel_2' > "$RUNNER_TEMP/helper-avd.txt" 2>&1
+export ANDROID_AVD_HOME="$RUNNER_TEMP/fnaf-avds"
+mkdir -p "$ANDROID_AVD_HOME/helperAndroid14.avd"
+cat > "$ANDROID_AVD_HOME/helperAndroid14.ini" <<EOF
+avd.ini.encoding=UTF-8
+path=$ANDROID_AVD_HOME/helperAndroid14.avd
+target=android-34
+EOF
+cat > "$ANDROID_AVD_HOME/helperAndroid14.avd/config.ini" <<EOF
+AvdId=helperAndroid14
+abi.type=x86_64
+avd.ini.encoding=UTF-8
+disk.dataPartition.size=2G
+hw.cpu.arch=x86_64
+hw.cpu.ncore=2
+hw.lcd.density=320
+hw.lcd.width=1080
+hw.lcd.height=1920
+hw.ramSize=1536
+hw.keyboard=yes
+hw.gpu.enabled=yes
+image.sysdir.1=system-images/android-34/google_atd/x86_64/
+tag.display=Google ATD
+tag.id=google_atd
+PlayStore.enabled=false
+vm.heapSize=256
+EOF
+"$EMU" -list-avds
 "$EMU" -avd helperAndroid14 -no-window -no-snapshot -no-audio -no-boot-anim -gpu swiftshader_indirect -memory 1536 -cores 2 -verbose > "$RUNNER_TEMP/helper-emulator.txt" 2>&1 & EPID=$!
 timeout 120 "$ADB" wait-for-device || { echo "ADB did not connect"; "$ADB" devices -l; exit 1; }
 BOOT=$("$ADB" shell getprop sys.boot_completed | tr -d '\r')
