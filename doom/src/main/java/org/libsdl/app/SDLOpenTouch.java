@@ -285,6 +285,7 @@ public class SDLOpenTouch
         return "native_init_istendi=" + (started > 0)
                 + " sure_ms=" + age
                 + " ekran=" + fbWidth + "x" + fbHeight
+                + " sdl_yuzey=" + fnafSurfaceWidth + "x" + fnafSurfaceHeight
                 + " ic_coz=" + renderWidth + "x" + renderHeight
                 + " secenek=0x" + Integer.toHexString(fnafOptions)
                 + " sorgu_hazir=" + fnafCanQueryEngine()

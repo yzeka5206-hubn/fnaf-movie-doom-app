@@ -18,6 +18,13 @@ class FnafDirectTouchHandler : StaticEventHandler
     ui int fnafBackH;
     ui int fnafScreenW;
     ui int fnafScreenH;
+    ui bool fnafPauseClassReady;
+    ui int fnafPauseKind;
+    ui FnafPauseListMenu fnafPendingMenu;
+    ui int fnafPendingX;
+    ui int fnafPendingY;
+    ui int fnafPendingSerial;
+    ui int fnafPendingUntil;
 
     ui MouseDriverHandler FnafDriver()
     {
@@ -36,9 +43,10 @@ class FnafDirectTouchHandler : StaticEventHandler
     ui void FnafPublishMode(bool force)
     {
         int mode = FnafMode();
-        int x = 0, y = 0, w = 0, h = 0, sw = 0, sh = 0;
+        int x = 0, y = 0, w = 0, h = 0, sw = 0, sh = 0, pauseKind = 0;
         if (mode == 2)
         {
+            if (FnafPauseListMenu(Menu.GetCurrentMenu())) pauseKind = 1;
             sw = screen.GetWidth();
             sh = screen.GetHeight();
             if (m_show_backbutton >= 0)
@@ -56,21 +64,35 @@ class FnafDirectTouchHandler : StaticEventHandler
         }
         if (fnafSession && (force || !fnafPublished || fnafLastMode != mode ||
             fnafBackX != x || fnafBackY != y || fnafBackW != w || fnafBackH != h ||
-            fnafScreenW != sw || fnafScreenH != sh))
+            fnafScreenW != sw || fnafScreenH != sh || fnafPauseKind != pauseKind))
         {
-            // Include the engine's exact back-button bounds in screen space.
-            // Android maps them through the letterbox before intercepting taps.
-            Console.PrintfEx(PRINT_LOG, "FNAF_TOUCH_STATE:%d:%d:%d:%d:%d:%d:%d:%d",
-                fnafSession, mode, x, y, w, h, sw, sh);
+            // Include the engine's back-button bounds and distinguish the
+            // original pause list from settings and other engine menus.
+            Console.PrintfEx(PRINT_LOG, "FNAF_TOUCH_STATE:%d:%d:%d:%d:%d:%d:%d:%d:%d",
+                fnafSession, mode, x, y, w, h, sw, sh, pauseKind);
             fnafLastMode = mode;
             fnafBackX = x; fnafBackY = y; fnafBackW = w; fnafBackH = h;
-            fnafScreenW = sw; fnafScreenH = sh;
+            fnafScreenW = sw; fnafScreenH = sh; fnafPauseKind = pauseKind;
             fnafPublished = true;
         }
     }
 
     override void UiTick()
     {
+        // The original MainMenu descriptor stays intact; only its controller
+        // is extended. A custom class supplied by another mod is left alone.
+        if (!fnafPauseClassReady)
+        {
+            let desc = ListMenuDescriptor(MenuDescriptor.GetDescriptor('MainMenu'));
+            if (desc)
+            {
+                if (!desc.mClass) desc.mClass = 'FnafPauseListMenu';
+                fnafPauseClassReady = true;
+            }
+        }
+        if (fnafPendingMenu &&
+            (Menu.GetCurrentMenu() != fnafPendingMenu || Menu.MenuTime() > fnafPendingUntil))
+            fnafPendingMenu = null;
         FnafPublishMode(false);
         if (FnafMode() == 2)
         {
@@ -92,6 +114,7 @@ class FnafDirectTouchHandler : StaticEventHandler
     {
         if (e.Name ~== "FnafTouchPing")
         {
+            if (fnafSession != e.Args[0]) fnafPendingMenu = null;
             fnafSession = e.Args[0];
             FnafPublishMode(true);
             return;
@@ -100,6 +123,31 @@ class FnafDirectTouchHandler : StaticEventHandler
         {
             if (e.Args[0] == fnafSession && fnafSession && e.Args[1] == 0 && FnafMode() == 0)
                 fnafMouseGuard = false;
+            return;
+        }
+        if (e.Name ~== "FnafPauseCancel")
+        {
+            if (e.Args[0] == fnafSession && e.Args[1] == fnafPendingSerial) fnafPendingMenu = null;
+            return;
+        }
+        if (e.Name ~== "FnafPauseTap")
+        {
+            int session = e.Args[0], packed = e.Args[1], serial = e.Args[2];
+            // A queued event from a previous activity must not clear or arm a
+            // newer session's tap, even when the serial numbers coincide.
+            if (!session || session != fnafSession) return;
+            let m = FnafPauseListMenu(Menu.GetCurrentMenu());
+            fnafPendingMenu = null;
+            if (serial > 0 && FnafMode() == 2 && m)
+            {
+                fnafPendingMenu = m;
+                fnafPendingX = (packed >> 16) & 65535;
+                fnafPendingY = packed & 65535;
+                fnafPendingSerial = serial;
+                fnafPendingUntil = Menu.MenuTime() + 2 * GameTicRate;
+            }
+            Console.PrintfEx(PRINT_LOG, "FNAF_PAUSE_TAP:%d:%d:%d",
+                session, serial, int(fnafPendingMenu != null));
             return;
         }
         if (!(e.Name ~== "FnafTouch")) return;
@@ -138,5 +186,54 @@ class FnafDirectTouchHandler : StaticEventHandler
              e.KeyScan == InputEvent.Key_MWheelDown))
             return true;
         return false;
+    }
+}
+
+// Only the original pause list gets this controller. Geometry comes from the
+// game's own descriptor and item hit tests, while activation happens in the
+// real UI responder (DMenu::InMenu), not from InterfaceProcess. This keeps
+// all original menu items, sounds and actions, and avoids unsafe CVAR access.
+class FnafPauseListMenu : ListMenu
+{
+    override bool OnUIEvent(UIEvent e)
+    {
+        let bridge = FnafDirectTouchHandler(StaticEventHandler.Find('FnafDirectTouchHandler'));
+        if (e.Type == UIEvent.Type_KeyDown && e.KeyChar == UIEvent.Key_F12 &&
+            bridge && bridge.fnafPendingMenu == self)
+        {
+            int x = int(double(bridge.fnafPendingX) * Screen.GetWidth() / 65535.0);
+            int y = int(double(bridge.fnafPendingY) * Screen.GetHeight() / 65535.0);
+            bool current = Menu.GetCurrentMenu() == self && Menu.MenuTime() <= bridge.fnafPendingUntil;
+            bridge.fnafPendingMenu = null;
+            if (!current || !mDesc) return true;
+
+            int w = mDesc.DisplayWidth();
+            if (w == ListMenuDescriptor.CleanScale)
+            {
+                x = ((x - (Screen.GetWidth() / 2)) / CleanXfac) + 160;
+                y = ((y - (Screen.GetHeight() / 2)) / CleanYfac) + 100;
+            }
+            else
+            {
+                int h = mDesc.DisplayHeight();
+                double fx, fy, fw, fh;
+                [fx, fy, fw, fh] = Screen.GetFullscreenRect(w, h, FSMode_ScaleToFit43);
+                if (fw <= 0 || fh <= 0) return true;
+                x = int((x - fx) * w / fw);
+                y = int((y - fy) * h / fh);
+            }
+            if ((mDesc.mWLeft > 0 && x <= mDesc.mWLeft) ||
+                (mDesc.mWRight > 0 && x >= mDesc.mWRight)) return true;
+            for (int i = 0; i < mDesc.mItems.Size(); i++)
+            {
+                if (mDesc.mItems[i].Selectable() && mDesc.mItems[i].CheckCoordinate(x, y))
+                {
+                    mDesc.mSelectedItem = i;
+                    return Super.MenuEvent(MKEY_Enter, true);
+                }
+            }
+            return true;
+        }
+        return Super.OnUIEvent(e);
     }
 }

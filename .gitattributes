@@ -5,3 +5,4 @@ doom/src/main/assets/game/*.ipk3 filter=lfs diff=lfs merge=lfs -text
 # Small, reproducible addons are ordinary Git data, not LFS objects.
 doom/src/main/assets/game/fnaf-touch-v1.pk3 -filter -diff -merge -text
 doom/src/main/assets/game/fnaf-model-static-v1.pk3 -filter -diff -merge -text
+doom/src/main/assets/game/fnaf-model-frames-v1.pk3 -filter -diff -merge -text

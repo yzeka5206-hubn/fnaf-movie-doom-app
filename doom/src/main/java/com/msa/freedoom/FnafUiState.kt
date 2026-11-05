@@ -3,6 +3,7 @@ package com.msa.freedoom
 import java.io.File
 import java.io.IOException
 import java.io.RandomAccessFile
+import java.util.ArrayDeque
 import kotlin.math.roundToInt
 
 /** Convert full-screen Android coordinates into the game's 16-bit UI space. */
@@ -18,6 +19,25 @@ internal fun fnafSurfaceCoordinate(position: Float, viewExtent: Int, surfaceExte
     return ((position / viewExtent.toFloat()).coerceIn(0f, 1f) * extent)
         .coerceAtMost((extent - 1).coerceAtLeast(0).toFloat())
 }
+
+/** Convert a view tap to the logical framebuffer, respecting output letterboxing. */
+internal fun fnafLogicalTouch(
+    viewX: Float, viewY: Float, viewWidth: Int, viewHeight: Int,
+    surfaceWidth: Int, surfaceHeight: Int, screenWidth: Int, screenHeight: Int,
+): Pair<Int, Int>? {
+    if (!viewX.isFinite() || !viewY.isFinite() || viewWidth <= 0 || viewHeight <= 0 ||
+        screenWidth <= 0 || screenHeight <= 0) return null
+    val sw = if (surfaceWidth > 0) surfaceWidth.toFloat() else viewWidth.toFloat()
+    val sh = if (surfaceHeight > 0) surfaceHeight.toFloat() else viewHeight.toFloat()
+    val scale = minOf(sw / screenWidth, sh / screenHeight)
+    if (scale <= 0f) return null
+    val x = (viewX / viewWidth * sw - (sw - screenWidth * scale) / 2f) / scale
+    val y = (viewY / viewHeight * sh - (sh - screenHeight * scale) / 2f) / scale
+    if (x < 0f || y < 0f || x >= screenWidth || y >= screenHeight) return null
+    return fnafTouchCoordinate(x, screenWidth) to fnafTouchCoordinate(y, screenHeight)
+}
+
+internal data class FnafPauseTapAck(val serial: Int, val accepted: Boolean)
 
 /** Back arrow's rectangle in the engine's logical screen coordinates. */
 internal data class FnafBackBounds(
@@ -50,8 +70,16 @@ internal class FnafUiStateReader(private val file: File, private val session: In
     private var offset = 0L
     private var partial = ""
     private val marker = "FNAF_TOUCH_STATE:$session:"
+    private val tapMarker = "FNAF_PAUSE_TAP:$session:"
+    private val tapAcks = ArrayDeque<FnafPauseTapAck>()
     var backBounds: FnafBackBounds? = null
         private set
+    var isPauseMenu: Boolean = false
+        private set
+
+    fun drainTapAcks(): List<FnafPauseTapAck> = buildList {
+        while (tapAcks.isNotEmpty()) add(tapAcks.removeFirst())
+    }
 
     fun poll(): Int? {
         return try {
@@ -70,6 +98,16 @@ internal class FnafUiStateReader(private val file: File, private val session: In
                 partial = lines.last().takeLast(256)
                 var newest: Int? = null
                 for (line in lines.dropLast(1)) {
+                    val tapIndex = line.indexOf(tapMarker)
+                    if (tapIndex >= 0) {
+                        val values = line.substring(tapIndex + tapMarker.length).trim().split(':')
+                        val serial = values.getOrNull(0)?.toIntOrNull()
+                        val accepted = values.getOrNull(1)?.toIntOrNull()
+                        if (values.size == 2 && serial != null && serial > 0 && (accepted == 0 || accepted == 1)) {
+                            if (tapAcks.size >= 16) tapAcks.removeFirst()
+                            tapAcks.addLast(FnafPauseTapAck(serial, accepted == 1))
+                        }
+                    }
                     val index = line.indexOf(marker)
                     if (index < 0) continue
                     val parts = line.substring(index + marker.length).trim().split(':')
@@ -77,8 +115,9 @@ internal class FnafUiStateReader(private val file: File, private val session: In
                     if (mode != null && mode in 0..2) {
                         newest = mode
                         val values = parts.drop(1).map { it.toIntOrNull() }
-                        backBounds = if (mode == 2 && values.size == 6 && values.all { it != null }) {
-                            val v = values.map { it!! }
+                        isPauseMenu = mode == 2 && values.size == 7 && values[6] == 1
+                        backBounds = if (mode == 2 && values.size in 6..7 && values.take(6).all { it != null }) {
+                            val v = values.take(6).map { it!! }
                             if (v[0] >= 0 && v[1] >= 0 && v[2] >= 0 && v[3] >= 0 &&
                                 v[4] > 0 && v[5] > 0 && v[0] + v[2] <= v[4] && v[1] + v[3] <= v[5])
                                 FnafBackBounds(v[0], v[1], v[2], v[3], v[4], v[5])

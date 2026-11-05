@@ -78,9 +78,16 @@ class Game : SDLActivity() {
     private var keyboardShift = false
     private var keyboardSymbols = false
     private var gameplayControls: List<View> = emptyList()
-    private var utilityControls: List<View> = emptyList()
+    private var gameOnlyControls: List<View> = emptyList()
+    private var navigationControls: List<View> = emptyList()
+    private var menuAdjustControls: List<View> = emptyList()
+    private var menuButton: TextView? = null
     private var uiMode = 0 // 0 gameplay, 1 character selector, 2 engine menu
     private var menuBackBounds: FnafBackBounds? = null
+    private var pauseListMenu = false
+    private data class PendingPauseTap(val serial: Int, val x: Float, val y: Float, val width: Int, val height: Int)
+    private var pendingPauseTap: PendingPauseTap? = null
+    private var pauseTapSerial = 0
     private val uiSession = Random.nextInt(1, Int.MAX_VALUE)
     @Volatile private var monitorRunning = false
     private var uiMonitor: ScheduledExecutorService? = null
@@ -234,7 +241,10 @@ class Game : SDLActivity() {
     }
 
     private fun keyTap(keyCode: Int): Pair<() -> Unit, () -> Unit> =
-        Pair({ setOverlayKey(keyCode, true) }, { setOverlayKey(keyCode, false) })
+        Pair({
+            if (uiMode == 2) cancelPendingPauseTap()
+            setOverlayKey(keyCode, true)
+        }, { setOverlayKey(keyCode, false) })
 
     private fun setHeldAction(action: Int, down: Boolean) {
         if (down && heldActions.add(action)) SDLOpenTouch.fnafAction(1, action)
@@ -280,6 +290,7 @@ class Game : SDLActivity() {
 
     private fun releaseAllOverlayInputs(reason: String) {
         releaseGameplayInputs(reason)
+        cancelPendingPauseTap()
         releaseMenuMouse()
         for (code in heldOverlayKeys.toList()) setOverlayKey(code, false)
     }
@@ -303,8 +314,13 @@ class Game : SDLActivity() {
                     }
                     val mode = reader.poll()
                     val backBounds = reader.backBounds
-                    if (mode != null) inputHandler.post {
-                        if (monitorRunning && !isFinishing && !isDestroyed) setGameUiMode(mode, backBounds)
+                    val pauseMenu = reader.isPauseMenu
+                    val tapAcks = reader.drainTapAcks()
+                    if (mode != null || tapAcks.isNotEmpty()) inputHandler.post {
+                        if (monitorRunning && !isFinishing && !isDestroyed) {
+                            if (mode != null) setGameUiMode(mode, backBounds, pauseMenu)
+                            tapAcks.forEach { handlePauseTapAck(it) }
+                        }
                     }
                 }
             } catch (_: Exception) {
@@ -315,8 +331,11 @@ class Game : SDLActivity() {
         }, 0L, 150L, TimeUnit.MILLISECONDS)
     }
 
-    private fun setGameUiMode(mode: Int, backBounds: FnafBackBounds? = null) {
+    private fun setGameUiMode(mode: Int, backBounds: FnafBackBounds? = null, isPauseMenu: Boolean = false) {
         if (mode !in 0..2) return
+        val nextPauseMenu = mode == 2 && isPauseMenu
+        if (pauseListMenu && !nextPauseMenu) cancelPendingPauseTap()
+        pauseListMenu = nextPauseMenu
         menuBackBounds = if (mode == 2) backBounds else null
         if (mode != uiMode) {
             val previous = uiMode
@@ -341,8 +360,16 @@ class Game : SDLActivity() {
     }
 
     private fun updateControlsVisibility() {
-        val visible = uiMode == 0 && !keyboardOpen
-        (gameplayControls + utilityControls).forEach { it.visibility = if (visible) View.VISIBLE else View.GONE }
+        val game = uiMode == 0 && !keyboardOpen
+        val navigation = uiMode != 1 && !keyboardOpen
+        val adjustment = uiMode == 2 && !keyboardOpen
+        (gameplayControls + gameOnlyControls).forEach { it.visibility = if (game) View.VISIBLE else View.GONE }
+        navigationControls.forEach { it.visibility = if (navigation) View.VISIBLE else View.GONE }
+        menuAdjustControls.forEach { it.visibility = if (adjustment) View.VISIBLE else View.GONE }
+        // Keep a deliberate, labelled escape and keyboard navigation available
+        // even if a device's mouse-coordinate path is wrong. They do not replace
+        // direct taps, which still go through the engine's own responder.
+        menuButton?.text = if (uiMode == 2) "GERI" else "MENU"
     }
 
     private fun sendDirectTouch(x: Float, y: Float, width: Int, height: Int, phase: Int) {
@@ -358,6 +385,66 @@ class Game : SDLActivity() {
         }
     }
 
+    private fun cancelPendingPauseTap() {
+        val pending = pendingPauseTap ?: return
+        pendingPauseTap = null
+        if (SDLOpenTouch.fnafCanQueryEngine()) {
+            try { SDLOpenTouch.fnafCommand("interfaceevent FnafPauseCancel $uiSession ${pending.serial}") }
+            catch (_: Exception) { /* engine is closing */ }
+            catch (_: LinkageError) { /* engine is closing */ }
+        }
+    }
+
+    private fun queuePauseTap(x: Float, y: Float, width: Int, height: Int) {
+        if (!pauseListMenu || !SDLOpenTouch.fnafCanQueryEngine()) return
+        val bounds = menuBackBounds
+        val logical = if (bounds != null) fnafLogicalTouch(x, y, width, height,
+            SDLOpenTouch.fnafSurfaceWidth(), SDLOpenTouch.fnafSurfaceHeight(),
+            bounds.screenWidth, bounds.screenHeight)
+        else fnafTouchCoordinate(x, width) to fnafTouchCoordinate(y, height)
+        if (logical == null) return // a black letterbox is not a menu item
+        cancelPendingPauseTap()
+        pauseTapSerial = if (pauseTapSerial >= Int.MAX_VALUE - 1) 1 else pauseTapSerial + 1
+        val pending = PendingPauseTap(pauseTapSerial, x, y, width, height)
+        pendingPauseTap = pending
+        try {
+            // This only arms the coordinates; the F12 GUI event below executes
+            // the original action in the engine's protected menu responder.
+            val packed = (logical.first shl 16) or logical.second
+            SDLOpenTouch.fnafCommand("interfaceevent FnafPauseTap $uiSession $packed ${pending.serial}")
+            recordEvent("DURAKLATMA DOKUNUS: ${logical.first},${logical.second} seri=${pending.serial}")
+            inputHandler.postDelayed({
+                if (pendingPauseTap?.serial == pending.serial) {
+                    cancelPendingPauseTap()
+                    if (uiMode == 2 && pauseListMenu) {
+                        recordEvent("DURAKLATMA: yanit gecikti, SDL yedegi")
+                        beginMenuMouse(pending.x, pending.y, pending.width, pending.height)
+                        endMenuMouse(false, pending.x, pending.y, pending.width, pending.height)
+                    }
+                }
+            }, 1200L)
+        } catch (_: Exception) {
+            pendingPauseTap = null
+        } catch (_: LinkageError) {
+            pendingPauseTap = null
+        }
+    }
+
+    private fun handlePauseTapAck(ack: FnafPauseTapAck) {
+        val pending = pendingPauseTap ?: return
+        if (ack.serial != pending.serial) return
+        pendingPauseTap = null
+        if (uiMode != 2 || !pauseListMenu) return
+        if (!ack.accepted) {
+            beginMenuMouse(pending.x, pending.y, pending.width, pending.height)
+            endMenuMouse(false, pending.x, pending.y, pending.width, pending.height)
+            return
+        }
+        setOverlayKey(KeyEvent.KEYCODE_F12, false)
+        setOverlayKey(KeyEvent.KEYCODE_F12, true)
+        inputHandler.postDelayed({ setOverlayKey(KeyEvent.KEYCODE_F12, false) }, 100L)
+    }
+
     private fun surfaceX(x: Float, width: Int): Float =
         fnafSurfaceCoordinate(x, width, SDLOpenTouch.fnafSurfaceWidth())
 
@@ -366,12 +453,16 @@ class Game : SDLActivity() {
 
     private fun beginMenuMouse(x: Float, y: Float, width: Int, height: Int, button: Int = 1) {
         if (!SDLOpenTouch.fnafCanQueryEngine()) return
+        cancelPendingPauseTap()
         releaseMenuMouse()
         menuMouseX = surfaceX(x, width)
         menuMouseY = surfaceY(y, height)
         menuMouseHeld = true
         menuMouseButton = button
         menuMouseDownAt = SystemClock.elapsedRealtime()
+        recordEvent("MENU DOKUNUS: view=${x.toInt()},${y.toInt()}/${width}x$height " +
+            "surface=${menuMouseX.toInt()},${menuMouseY.toInt()}/" +
+            "${SDLOpenTouch.fnafSurfaceWidth()}x${SDLOpenTouch.fnafSurfaceHeight()} button=$button")
         // SDL mouse events enter the real engine responder. Its menu security
         // context allows CVar changes (gamma, quality, etc.) without a VM abort.
         SDLActivity.onNativeMouse(button, MotionEvent.ACTION_DOWN, menuMouseX, menuMouseY, false)
@@ -472,10 +563,14 @@ class Game : SDLActivity() {
                             }
                         } else if (menuKind == 1) endMenuMouse(cancel, x, y, width, height)
                         else if (menuKind == 0 && !cancel && uiMode == 2) {
-                            // Defer a tap's down event until release, so a
-                            // vertical swipe can scroll without activating a row.
-                            beginMenuMouse(x, y, width, height)
-                            endMenuMouse(false, x, y, width, height)
+                            // Pause list taps avoid device-specific SDL mouse
+                            // scaling; settings and other menus retain real SDL.
+                            // Down is deferred so a swipe never activates a row.
+                            if (pauseListMenu) queuePauseTap(x, y, width, height)
+                            else {
+                                beginMenuMouse(x, y, width, height)
+                                endMenuMouse(false, x, y, width, height)
+                            }
                         }
                     }
                     else -> if (!cancel && !moved) {
@@ -643,6 +738,7 @@ class Game : SDLActivity() {
             releaseAllOverlayInputs("MENU")
             SDLOpenTouch.fnafMenu()
         }, {})
+        menuButton = menu
         place(root, menu, Gravity.TOP or Gravity.START, left = 18, top = 14)
 
         // LOG only opens an app panel; it does not send ESC/ENTER to the game.
@@ -665,7 +761,18 @@ class Game : SDLActivity() {
         val (downDown, downUp) = keyTap(KeyEvent.KEYCODE_DPAD_DOWN)
         val down = makeButton("▼", 52, downDown, downUp)
         place(root, down, Gravity.TOP or Gravity.END, right = 158, top = 14)
-        utilityControls = listOf(menu, logBtn, enter, up, down)
+
+        // Extra fallback for sliders and option lists if a specific Android
+        // device does not send absolute mouse positions correctly.
+        val (leftDown, leftUp) = keyTap(KeyEvent.KEYCODE_DPAD_LEFT)
+        val left = makeButton("◀", 52, leftDown, leftUp)
+        place(root, left, Gravity.TOP or Gravity.END, right = 222, top = 14)
+        val (rightDown, rightUp) = keyTap(KeyEvent.KEYCODE_DPAD_RIGHT)
+        val right = makeButton("▶", 52, rightDown, rightUp)
+        place(root, right, Gravity.TOP or Gravity.END, right = 286, top = 14)
+        gameOnlyControls = listOf(logBtn)
+        navigationControls = listOf(menu, enter, up, down)
+        menuAdjustControls = listOf(left, right)
         keyboardPanel = createEmbeddedKeyboard().also { panel ->
             panel.visibility = View.GONE
             root.addView(panel, FrameLayout.LayoutParams(
@@ -690,6 +797,7 @@ class Game : SDLActivity() {
                 FrameLayout.LayoutParams.MATCH_PARENT,
             ),
         )
+        updateControlsVisibility()
     }
 
     /** App keyboard does not rely on the Android IME becoming visible. */
@@ -906,6 +1014,7 @@ class Game : SDLActivity() {
         appendLine("Cihaz: ${Build.MANUFACTURER} ${Build.MODEL} | Android ${Build.VERSION.RELEASE}")
         appendLine("Hareket modu: ${if (analogMovementMode) "ANALOG" else "WASD"}")
         appendLine("Dokunma ekran durumu: $uiMode | Bakis X: ${if (reverseLookX) 1 else 2} Y: ${if (reverseLookY) 1 else 2}")
+        appendLine("Menu geri alanı: ${menuBackBounds ?: "bilinmiyor"}")
         appendLine("Saat: ${watchState.active} | Egil: ${crouchState.active} | Kos: ${runState.active} | Klavye: $keyboardOpen")
         appendLine("Kopru: ${SDLOpenTouch.fnafDebugInfo()}")
         appendLine("Deneme: Oyuna don, cubugu birkac saniye it, LOG > KOPYALA yap.")

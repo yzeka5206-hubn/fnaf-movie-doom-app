@@ -11,14 +11,16 @@ object FnafBundledGame {
     // Temporary static poses for the opening car and Abby, loaded after the
     // original models. Remove this addon when skeletal animation is fixed.
     const val STATIC_MODELS = "mods/fnaf-model-static-v1.pk3"
-    val modPaths = listOf(WAD, PK3, TOUCH, STATIC_MODELS)
+    const val FRAME_MODELS = "mods/fnaf-model-frames-v1.pk3"
+    val modPaths = listOf(WAD, PK3, TOUCH, STATIC_MODELS, FRAME_MODELS)
 
     private val requiredSizes = linkedMapOf(
         IWAD to 66_904L,
         WAD to 37_464_359L,
         PK3 to 207_026_277L,
-        TOUCH to 1917L,
+        TOUCH to 3088L,
         STATIC_MODELS to 5_280_952L,
+        FRAME_MODELS to 3_102_762L,
     )
 
     /** Refuse to start the engine with a missing/partial extraction. Never deletes user files. */

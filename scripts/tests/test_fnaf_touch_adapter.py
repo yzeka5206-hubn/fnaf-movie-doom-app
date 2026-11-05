@@ -23,9 +23,18 @@ class TouchAdapterTests(unittest.TestCase):
             self.assertIn('EventHandler.SendNetworkEvent("NetMouse", nx, ny)', script)
             self.assertIn('EventHandler.SendNetworkEvent("NetClick")', script)
             self.assertNotIn('.MouseEvent(', script)
-            self.assertNotIn('.MenuEvent(', script)
+            self.assertNotIn('.MenuEvent(', script.split('class FnafPauseListMenu', 1)[0])
             self.assertIn('FnafTouchAck', script)
             self.assertIn('fnafMouseGuard', script)
+            self.assertIn('class FnafPauseListMenu : ListMenu', script)
+            self.assertIn('UIEvent.Key_F12', script)
+            self.assertIn('FNAF_PAUSE_TAP:', script)
+            self.assertIn('return Super.MenuEvent(MKEY_Enter, true)', script)
+            # Activation occurs only in the real menu responder, never directly
+            # in InterfaceProcess, which would bypass the CVAR security guard.
+            interface = script.split('override void InterfaceProcess', 1)[1].split('ui void FnafHandleTouch', 1)[0]
+            self.assertNotIn('MenuEvent(', interface)
+            self.assertNotIn('Activate()', interface)
             self.assertNotIn('FNAF_AUTOTEST', script)
             self.assertNotIn('REAL_SELECTION_', script)
 

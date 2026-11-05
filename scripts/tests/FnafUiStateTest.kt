@@ -17,6 +17,14 @@ fun main() {
         file.appendText("FNAF_TOUCH_STATE:87654:2:0:0:48:39:960:540\n")
         check(reader.poll() == 2)
         val bounds = reader.backBounds!!
+        check(!reader.isPauseMenu) // old marker remains backwards compatible
+        file.appendText("FNAF_TOUCH_STATE:87654:2:0:0:48:39:960:540:1\n")
+        file.appendText("FNAF_PAUSE_TAP:111:1:1\nFNAF_PAUSE_TAP:87654:7:")
+        check(reader.poll() == 2 && reader.isPauseMenu && reader.drainTapAcks().isEmpty())
+        file.appendText("1\nFNAF_PAUSE_TAP:87654:8:0\nFNAF_PAUSE_TAP:87654:-1:1\n")
+        check(reader.poll() == null)
+        check(reader.drainTapAcks() == listOf(FnafPauseTapAck(7, true), FnafPauseTapAck(8, false)))
+        check(reader.drainTapAcks().isEmpty())
         check(bounds.contains(45f, 20f, 960, 540, 960, 540))
         check(!bounds.contains(100f, 20f, 960, 540, 960, 540))
         // 16:9 game letterboxed horizontally in a 20:9 Android surface.
@@ -39,6 +47,10 @@ fun main() {
         check(fnafSurfaceCoordinate(-1f, 100, 40) == 0f)
         check(fnafSurfaceCoordinate(50f, 100, 0) == 50f)
         check(fnafSurfaceCoordinate(Float.NaN, 100, 40) == 0f)
-        println("PASS session-specific state reader, partial lines, truncation, bounded tail and normalized coordinates")
+        check(fnafLogicalTouch(600f, 270f, 1200, 540, 1200, 540, 960, 540) == (32768 to 32768))
+        check(fnafLogicalTouch(10f, 270f, 1200, 540, 1200, 540, 960, 540) == null)
+        check(fnafLogicalTouch(600f, 270f, 1200, 540, 600, 270, 960, 540) == (32768 to 32768))
+        check(fnafLogicalTouch(Float.NaN, 0f, 1200, 540, 1200, 540, 960, 540) == null)
+        println("PASS session-specific state/ack reader, letterboxed coordinates, truncation and bounded tail")
     } finally { dir.deleteRecursively() }
 }

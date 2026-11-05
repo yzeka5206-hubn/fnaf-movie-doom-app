@@ -7,6 +7,7 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
 import android.widget.TextView;
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import org.libsdl.app.EventLog;
 import org.libsdl.app.SDLOpenTouch;
@@ -33,10 +34,16 @@ public class GameOverlayHostTest {
     private static void down(View view) { touch(view, MotionEvent.ACTION_DOWN, 10, 10); }
     private static void up(View view) { touch(view, MotionEvent.ACTION_UP, 10, 10); }
     private static void tap(View view) { down(view); up(view); }
-    private static void mode(Game game, int state) throws Exception {
-        Method method = Game.class.getDeclaredMethod("setGameUiMode", int.class, FnafBackBounds.class);
+    private static void mode(Game game, int state) throws Exception { mode(game, state, false); }
+    private static void mode(Game game, int state, boolean pauseMenu) throws Exception {
+        Method method = Game.class.getDeclaredMethod("setGameUiMode", int.class, FnafBackBounds.class, boolean.class);
         method.setAccessible(true);
-        method.invoke(game, state, state == 2 ? new FnafBackBounds(0, 0, 48, 39, 570, 570) : null);
+        method.invoke(game, state, state == 2 ? new FnafBackBounds(0, 0, 48, 39, 570, 570) : null, pauseMenu);
+    }
+    private static void ack(Game game, int serial, boolean accepted) throws Exception {
+        Method method = Game.class.getDeclaredMethod("handlePauseTapAck", FnafPauseTapAck.class);
+        method.setAccessible(true);
+        method.invoke(game, new FnafPauseTapAck(serial, accepted));
     }
     private static void margin(View v, int right, int bottom) {
         FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams)v.getLayoutParams();
@@ -78,9 +85,40 @@ public class GameOverlayHostTest {
         check(!has("A:1:13") && EventLog.events.stream().noneMatch(x -> x.startsWith("M:1:")), "tap must not toggle flashlight or inject Mouse1");
         EventLog.clear(); touch(look, MotionEvent.ACTION_DOWN, -10, 9999); touch(look, MotionEvent.ACTION_CANCEL, -10, 9999);
         check(has("CMD:interfaceevent FnafTouch 0 65535 0") && has("CMD:interfaceevent FnafTouch 0 65535 3"), "coordinate clamp and cancel");
-        // Engine menu: horizontal drags and taps use actual SDL mouse input,
-        // never the former unsafe direct ZScript menu calls.
-        mode(g, 2); EventLog.clear();
+        // The original pause list uses a session/serial-acknowledged bridge.
+        // Its GUI key is not emitted until the engine has armed that exact tap.
+        mode(g, 2, true); EventLog.clear();
+        Field sessionField = Game.class.getDeclaredField("uiSession"); sessionField.setAccessible(true);
+        int session = sessionField.getInt(g);
+        touch(look, MotionEvent.ACTION_DOWN, 285, 285); touch(look, MotionEvent.ACTION_UP, 285, 285);
+        check(has("CMD:interfaceevent FnafPauseTap " + session + " " + ((32768 << 16) | 32768) + " 1") && !has("KD:142"), "pause tap queues session and normalized coordinates");
+        ack(g, 99, true); check(!has("KD:142"), "stale acknowledgement ignored");
+        ack(g, 1, true); check(has("KD:142") && !has("M:1:0:285.0:285.0:false"), "matching ack sends protected UI key");
+        Handler.advance(100); check(has("KU:142"), "protected UI key released");
+        EventLog.clear(); touch(look, MotionEvent.ACTION_DOWN, 285, 285); touch(look, MotionEvent.ACTION_UP, 285, 285);
+        tap(button(g, "GERI"));
+        check(has("CMD:interfaceevent FnafPauseCancel " + session + " 2") && has("MENU"), "back cancels pending tap");
+        ack(g, 2, true); check(!has("KD:142"), "cancelled tap cannot activate later");
+        EventLog.clear(); touch(look, MotionEvent.ACTION_DOWN, 285, 285); touch(look, MotionEvent.ACTION_UP, 285, 285);
+        Handler.advance(1200);
+        check(has("CMD:interfaceevent FnafPauseCancel " + session + " 3") && has("M:1:0:285.0:285.0:false"), "missing ack falls back to SDL");
+        Handler.advance(100); check(has("M:0:1:285.0:285.0:false"), "fallback releases SDL mouse");
+
+        // Other engine menus: horizontal drags and taps use actual SDL mouse
+        // input, never an unsafe direct call into menu methods.
+        mode(g, 2, false);
+        check(button(g, "GERI") != null && button(g, "ENTER") != null &&
+                button(g, "▲") != null && button(g, "▼") != null &&
+                button(g, "◀") != null && button(g, "▶") != null,
+                "menu has a reliable back and keyboard navigation fallback");
+        EventLog.clear(); tap(button(g, "GERI"));
+        check(has("MENU"), "menu fallback goes through native back/escape");
+        EventLog.clear(); tap(button(g, "▲")); tap(button(g, "▼"));
+        tap(button(g, "◀")); tap(button(g, "▶")); tap(button(g, "ENTER"));
+        check(has("KD:19") && has("KU:19") && has("KD:20") && has("KU:20") &&
+                has("KD:21") && has("KU:21") && has("KD:22") && has("KU:22") &&
+                has("KD:66") && has("KU:66"), "fallback navigation uses SDL key events");
+        EventLog.clear();
         touch(look, MotionEvent.ACTION_DOWN, 285, 285); Handler.advance(40);
         touch(look, MotionEvent.ACTION_MOVE, 375, 295); touch(look, MotionEvent.ACTION_UP, 375, 295);
         check(has("M:1:0:285.0:285.0:false") && has("M:1:2:375.0:295.0:false"), "SDL slider drag");
@@ -110,7 +148,9 @@ public class GameOverlayHostTest {
         check(has("M:1:0:142.5:95.0:false"), "coordinates scale to the SDL surface when res_div differs");
         mode(g, 0);
         check(has("M:0:1:142.5:95.0:false") && EventLog.events.stream().anyMatch(x -> x.startsWith("CMD:interfaceevent FnafTouchAck ")), "mode change releases mouse and acknowledges gameplay");
-        check(al.getVisibility() == View.VISIBLE, "controls return on gameplay");
+        check(al.getVisibility() == View.VISIBLE && button(g, "MENU") != null &&
+                find(g.root, "GERI") == null && find(g.root, "◀") == null && find(g.root, "▶") == null,
+                "controls return on gameplay and menu-only arrows disappear");
         Handler.advance(200); check(EventLog.events.stream().filter(x -> x.equals("M:0:1:142.5:95.0:false")).count() == 1, "no stale duplicate release");
         SDLOpenTouch.sw = SDLOpenTouch.sh = 570;
         EventLog.clear(); touch(look, MotionEvent.ACTION_DOWN, 285, 285); touch(look, MotionEvent.ACTION_UP, 285, 285);
