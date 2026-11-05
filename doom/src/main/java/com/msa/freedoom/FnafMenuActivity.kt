@@ -26,11 +26,28 @@ class FnafMenuActivity : AppCompatActivity() {
     private lateinit var status: TextView
     private var gameStarted = false
     private var menuLaunched = false
+    private var menuLaunchTime = 0L
 
     private val originalMenu = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         menuLaunched = false
         if (result.resultCode != Activity.RESULT_OK) {
-            finish()
+            // A crash in the separate SDL process otherwise looks like a silent
+            // exit. Java reports and Android's own exit reason remain local.
+            lifecycleScope.launch {
+                val report = withContext(Dispatchers.IO) {
+                    var found: String? = null
+                    repeat(4) {
+                        if (found == null) {
+                            found = MenuCrashReporter.diagnose(this@FnafMenuActivity, menuLaunchTime)
+                            if (found == null) Thread.sleep(150)
+                        }
+                    }
+                    found
+                }
+                if (report == null) finish() else showFailure(
+                    "Menü açılırken hata oluştu. Lütfen bu ekranı paylaş:\n\n$report"
+                )
+            }
         } else {
             val selection = FnafMenuSelection.fromIntent(result.data)
             if (selection == null) showFailure("Menüden geçersiz seçim geldi.")
@@ -54,6 +71,7 @@ class FnafMenuActivity : AppCompatActivity() {
         else {
             gameStarted = savedInstanceState.getBoolean("game_started", false)
             menuLaunched = savedInstanceState.getBoolean("menu_launched", false)
+            menuLaunchTime = savedInstanceState.getLong("menu_launch_time", 0L)
             if (!gameStarted && !menuLaunched) prepareMenu()
         }
     }
@@ -61,6 +79,7 @@ class FnafMenuActivity : AppCompatActivity() {
     override fun onSaveInstanceState(outState: Bundle) {
         outState.putBoolean("game_started", gameStarted)
         outState.putBoolean("menu_launched", menuLaunched)
+        outState.putLong("menu_launch_time", menuLaunchTime)
         super.onSaveInstanceState(outState)
     }
 
@@ -86,6 +105,8 @@ class FnafMenuActivity : AppCompatActivity() {
             try {
                 withContext(Dispatchers.IO) { prepareOriginalAssets() }
                 if (!isFinishing && !isDestroyed && !menuLaunched) {
+                    MenuCrashReporter.clear(this@FnafMenuActivity)
+                    menuLaunchTime = System.currentTimeMillis()
                     menuLaunched = true
                     originalMenu.launch(Intent(this@FnafMenuActivity, OriginalMenuActivity::class.java))
                 }
@@ -157,9 +178,11 @@ class FnafMenuActivity : AppCompatActivity() {
 
     private fun showFailure(message: String) {
         if (isFinishing || isDestroyed) return
-        AlertDialog.Builder(this).setTitle("Başlatılamadı").setMessage(message)
+        val dialog = AlertDialog.Builder(this).setTitle("Başlatılamadı").setMessage(message)
             .setPositiveButton("Menüye dön") { _, _ -> prepareMenu() }
             .setNegativeButton("Çık") { _, _ -> finish() }.show()
+        // A user can copy the local crash text or simply share a screenshot.
+        dialog.findViewById<TextView>(android.R.id.message)?.setTextIsSelectable(true)
     }
 
     companion object {

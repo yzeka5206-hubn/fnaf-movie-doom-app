@@ -222,7 +222,15 @@ public class HIDDeviceManager {
         filter.addAction(UsbManager.ACTION_USB_DEVICE_ATTACHED);
         filter.addAction(UsbManager.ACTION_USB_DEVICE_DETACHED);
         filter.addAction(HIDDeviceManager.ACTION_USB_PERMISSION);
-        mContext.registerReceiver(mUsbBroadcast, filter);
+        // This filter includes an app-defined action. Android 14+ (target 34+)
+        // rejects the legacy unflagged registration, crashing the menu Activity.
+        // Keep the receiver private; it accepts our USB-permission PendingIntent
+        // and system USB broadcasts without exposing the action to other apps.
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            mContext.registerReceiver(mUsbBroadcast, filter, Context.RECEIVER_NOT_EXPORTED);
+        } else {
+            mContext.registerReceiver(mUsbBroadcast, filter);
+        }
 
         for (UsbDevice usbDevice : mUsbManager.getDeviceList().values()) {
             handleUsbDeviceAttached(usbDevice);

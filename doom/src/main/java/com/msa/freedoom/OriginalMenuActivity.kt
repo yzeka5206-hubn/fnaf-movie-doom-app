@@ -34,6 +34,9 @@ class OriginalMenuActivity : SDLActivity() {
     override fun getArguments(): Array<String> = arrayOf(File(filesDir, "original-menu").absolutePath)
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        // Capture Java startup failures in this process before SDL initialization.
+        // Reports stay on this phone unless the user chooses to share them.
+        MenuCrashReporter.install(this)
         super.onCreate(savedInstanceState)
         AppSettings.reloadSettings(application)
         Utils.setImmersionMode(this)
