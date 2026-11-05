@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ActivityInfo
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
@@ -27,6 +28,14 @@ class OriginalMenuActivity : SDLActivity() {
 
     override fun useOpenTouch(): Boolean = false
     override fun getLibraries(): Array<String> = arrayOf("hidapi", "saffal", "openal", "SDL2", "Chowdren", "FnafMenuRunner")
+
+    // The converted launcher creates a resizable SDL window without an
+    // orientation hint. SDL would otherwise replace the manifest's landscape
+    // setting with FULL_SENSOR and crop the menu when the phone is upright.
+    // Scope this override to the menu; the v7 gameplay activity is unchanged.
+    override fun setOrientationBis(w: Int, h: Int, resizable: Boolean, hint: String?) {
+        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+    }
 
     private external fun nativeRunConvertedLauncher(arguments: Array<String>): Int
 
