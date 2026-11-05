@@ -22,6 +22,10 @@ trap cleanup EXIT
 [ -f "$APK" ] || { echo 'No APK to test'; exit 1; }
 [ -e /dev/kvm ] || { echo 'No /dev/kvm; CI Android 14 diagnostic skipped'; exit 0; }
 sudo chmod a+rw /dev/kvm
+printf '=== Freeing unused software on this disposable GitHub runner ===\n'
+df -h "$RUNNER_TEMP"
+sudo rm -rf "$ANDROID_SDK_ROOT/ndk" /usr/share/dotnet /opt/ghc /usr/local/share/boost || true
+df -h "$RUNNER_TEMP"
 printf '=== Installing Android 14 Google APIs image ===\n'
 "$SDKMAN" 'emulator' 'system-images;android-34;google_apis;x86_64' > "$RUNNER_TEMP/ci-sdk-install.txt" 2>&1 || { tail -40 "$RUNNER_TEMP/ci-sdk-install.txt"; exit 1; }
 "$EMU" -accel-check || true
@@ -88,7 +92,7 @@ printf '\n=== Menu process after startup ===\n'
 "$ADB" shell ps -A | grep -E 'fnaf.moviedoom.menutest|PID' || true
 "$ADB" shell dumpsys activity activities | grep -E 'mResumedActivity|topResumedActivity|ResumedActivity' || true
 printf '\n=== Relevant startup / crash events ===\n'
-grep -n -i -E -C 4 'FATAL EXCEPTION|AndroidRuntime|Fatal signal|SecurityException|OriginalMenuActivity|native bridge|Chowdren|UnsatisfiedLinkError' "$LOG" | tail -220 || true
+grep -n -i -E -C 4 'FATAL EXCEPTION|AndroidRuntime|Fatal signal|SecurityException|OriginalMenuActivity|native bridge|Chowdren|FnafMenuRunner|UnsatisfiedLinkError' "$LOG" | tail -220 || true
 "$ADB" exec-out screencap -p > "$SCREEN" || true
 printf '\n=== Diagnostic screenshot bytes: '; wc -c < "$SCREEN"
 printf '\n=== Local crash report file names (if any) ===\n'
