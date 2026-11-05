@@ -128,9 +128,11 @@ public class MainActivity extends Activity {
                 ContentValues complete = new ContentValues(); complete.put(MediaStore.Downloads.IS_PENDING, 0);
                 if (cr.update(outputUri, complete, null, null) != 1) throw new IOException("Yeni APK tamamlanamadı.");
                 String fileName = displayName(cr, outputUri);
+                android.util.Log.i("FnafRepairCI", "FNAF_REPAIR_READY " + fileName);
                 runOnUiThread(() -> finishWork("Hazır ve doğrulandı!\n\n1. Yeni sürüm farklı imzalıdır: kurmak için yalnızca eski ‘FNAF Menü Testi’ni kaldırman gerekir. Bu testin kendi kayıtları ve ayarları silinebilir; gerekiyorsa önce yedekle. Ayrı v7'yi kaldırma.\n\n2. Dosyalar → İndirilenler → " + fileName + " dosyasını aç ve yükle.\n\nİstersen işlemden sonra bu güncelleyiciyi kaldırabilirsin."));
             } catch (Exception e) {
                 if (outputUri != null) try { cr.delete(outputUri, null, null); } catch (Exception ignored) { }
+                android.util.Log.e("FnafRepairCI", "FNAF_REPAIR_FAILED", e);
                 String message = safeMessage(e);
                 runOnUiThread(() -> finishWork("Hazırlanamadı: " + message + "\n\nEski test kuruluysa tekrar dene. Gerekirse önceki doom-debug.apk dosyasını seç. Hiçbir uygulama silinmedi."));
             }
