@@ -8,42 +8,51 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.Arrays;
 
-/** Verified, one-purpose APK delta. No network and no mutation of the input. */
+/** Verified, one-purpose, forward-only APK delta. No network; input is unchanged. */
 final class PatchEngine {
-    private static final byte[] MAGIC = {'F','N','A','F','P','C','H','1'};
+    private static final byte[] MAGIC = {'F','N','A','F','P','C','H','2'};
     private static final long MAX_FILE_SIZE = 2L * 1024 * 1024 * 1024;
-    private static final int MAX_SEGMENT = 16 * 1024 * 1024;
     private PatchEngine() { }
 
     static void apply(InputStream original, InputStream patch, OutputStream target) throws IOException {
         DataInputStream in = new DataInputStream(patch);
         byte[] magic = new byte[8]; in.readFully(magic);
         if (!Arrays.equals(magic, MAGIC)) throw new IOException("Onarım verisi tanınmıyor.");
-        long total = in.readLong();
-        byte[] expectedOld = new byte[32]; byte[] expectedNew = new byte[32];
+        long oldSize = in.readLong(), newSize = in.readLong();
+        byte[] expectedOld = new byte[32], expectedNew = new byte[32];
         in.readFully(expectedOld); in.readFully(expectedNew);
         int count = in.readInt();
-        if (total <= 0 || total > MAX_FILE_SIZE || count < 1 || count > 4096)
+        if (oldSize <= 0 || oldSize > MAX_FILE_SIZE || newSize <= 0 || newSize > MAX_FILE_SIZE || count < 1 || count > 16384)
             throw new IOException("Onarım verisi geçersiz.");
         MessageDigest oldHash = digest(), newHash = digest();
         byte[] buf = new byte[64 * 1024];
-        long cursor = 0;
+        long oldCursor = 0, newCursor = 0;
         for (int i = 0; i < count; i++) {
-            long offset = in.readLong(); int length = in.readInt();
-            if (offset < cursor || length <= 0 || length > MAX_SEGMENT || offset > total - length)
-                throw new IOException("Onarım aralığı geçersiz.");
-            copyExactly(original, target, oldHash, newHash, offset - cursor, buf);
-            discardExactly(original, oldHash, length, buf);
-            int left = length;
-            while (left > 0) {
-                int take = Math.min(left, buf.length);
-                in.readFully(buf, 0, take);
-                target.write(buf, 0, take); newHash.update(buf, 0, take);
-                left -= take;
+            int kind = in.readUnsignedByte();
+            long offset = -1, length;
+            if (kind == 0) { offset = in.readLong(); length = in.readLong(); }
+            else if (kind == 1) { length = in.readLong(); }
+            else throw new IOException("Onarım işlemi tanınmıyor.");
+            if (length <= 0 || length > newSize - newCursor)
+                throw new IOException("Onarım uzunluğu geçersiz.");
+            if (kind == 0) {
+                if (offset < oldCursor || offset > oldSize - length)
+                    throw new IOException("Onarım kaynağı geçersiz.");
+                discardExactly(original, oldHash, offset - oldCursor, buf);
+                copyExactly(original, target, oldHash, newHash, length, buf);
+                oldCursor = offset + length;
+            } else {
+                long left = length;
+                while (left > 0) {
+                    int take = (int)Math.min(left, buf.length);
+                    in.readFully(buf, 0, take);
+                    target.write(buf, 0, take); newHash.update(buf, 0, take); left -= take;
+                }
             }
-            cursor = offset + length;
+            newCursor += length;
         }
-        copyExactly(original, target, oldHash, newHash, total - cursor, buf);
+        if (newCursor != newSize) throw new IOException("Yeni APK eksik.");
+        discardExactly(original, oldHash, oldSize - oldCursor, buf);
         if (original.read() != -1 || in.read() != -1)
             throw new IOException("APK veya onarım verisi beklenmedik uzunlukta.");
         if (!MessageDigest.isEqual(oldHash.digest(), expectedOld))
