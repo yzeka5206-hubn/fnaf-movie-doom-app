@@ -21,7 +21,7 @@ index 54d700c..52c329e 100644
  		i++;
  	}
 diff --git a/doom/src/main/jni/engine/gzdoom/src/common/rendering/gles/gles_renderstate.cpp b/doom/src/main/jni/engine/gzdoom/src/common/rendering/gles/gles_renderstate.cpp
-index a6ff91a..57c1162 100644
+index a6ff91a..9c0408b 100644
 --- a/doom/src/main/jni/engine/gzdoom/src/common/rendering/gles/gles_renderstate.cpp
 +++ b/doom/src/main/jni/engine/gzdoom/src/common/rendering/gles/gles_renderstate.cpp
 @@ -56,6 +56,11 @@ static void matrixToGL(const VSMatrix &mat, int loc)
@@ -36,7 +36,7 @@ index a6ff91a..57c1162 100644
  	mVertexBuffer = mCurrentVertexBuffer = nullptr;
  	mGlossiness = 0.0f;
  	mSpecularLevel = 0.0f;
-@@ -338,7 +343,40 @@ bool FGLRenderState::ApplyShader()
+@@ -338,7 +343,44 @@ bool FGLRenderState::ApplyShader()
  		activeShader->cur->muLightRange.Set(range);
  	}
  
@@ -46,11 +46,15 @@ index a6ff91a..57c1162 100644
 +		// A per-draw palette avoids overflowing a uniform array when multiple
 +		// skinned actors are visible. Index 0 below means this actor's first
 +		// bone, NOT the beginning of the shared frame buffer.
-+		const int available = screen->mBones->GetCurrentIndex() - mBoneIndexBase;
++		// UploadBones increments its frame index even when the backing buffer
++		// overflows. Never read beyond the actual CPU allocation in that case.
++		auto boneBuffer = screen->mBones->GetBuffer();
++		const int capacity = static_cast<int>(boneBuffer->Size() / (16 * sizeof(float)));
++		const int available = std::min(screen->mBones->GetCurrentIndex(), capacity) - mBoneIndexBase;
 +		const int count = std::min(available, FNAF_BONE_PALETTE_ROWS);
 +		if (count > 0 && activeShader->cur->fnaf_bone_texture_index >= 0)
 +		{
-+			const float* bones = static_cast<const float*>(screen->mBones->GetBuffer()->Memory())
++			const float* bones = static_cast<const float*>(boneBuffer->Memory())
 +				+ mBoneIndexBase * 16;
 +			GLint previousTexture = GL_TEXTURE0;
 +			glGetIntegerv(GL_ACTIVE_TEXTURE, &previousTexture);
