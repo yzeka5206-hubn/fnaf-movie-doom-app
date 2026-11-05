@@ -51,13 +51,26 @@ EOF
 timeout 120 "$ADB" wait-for-device || { echo "ADB did not connect"; "$ADB" devices -l; exit 1; }
 BOOT=$("$ADB" shell getprop sys.boot_completed | tr -d '\r')
 if [ "$BOOT" != 1 ]; then
-  timeout 240 bash -c '"$1" logcat -b events -v brief | grep -m 1 -E "boot_progress_enable_screen|boot_progress_launcher|am_boot_complete"' _ "$ADB" || { tail -60 "$RUNNER_TEMP/helper-emulator.txt"; exit 1; }
+  timeout 180 python3 - "$ADB" <<'PYBOOT'
+import subprocess,sys
+p=subprocess.Popen([sys.argv[1],"logcat","-b","events","-v","brief"],stdout=subprocess.PIPE,text=True)
+try:
+ for line in p.stdout:
+  if any(x in line for x in ("boot_progress_enable_screen","boot_progress_launcher","am_boot_complete")):
+   print(line.strip(),flush=True);break
+ else: raise RuntimeError("logcat ended before boot")
+finally:
+ p.terminate()
+ try: p.wait(timeout=5)
+ except subprocess.TimeoutExpired: p.kill();p.wait()
+PYBOOT
 fi
 printf '=== Android version / install fixtures ===\n'
 "$ADB" shell getprop ro.build.version.release
 "$ADB" install "$FIX/old.apk"
 "$ADB" install "$HELPER"
 "$ADB" logcat -c
+"$ADB" shell wm dismiss-keyguard || true
 "$ADB" shell am start -W -n com.fnaf.moviedoom.repair/.MainActivity
 "$ADB" shell uiautomator dump /sdcard/window.xml >/dev/null
 "$ADB" shell cat /sdcard/window.xml > "$RUNNER_TEMP/helper-window.xml"
@@ -72,7 +85,19 @@ else: raise SystemExit('prepare button not found')
 PY
 )
 printf '=== Tapping installed-APK preparation button at %s,%s ===\n' "$X" "$Y"
-timeout 60 bash -c '"$1" logcat -v brief -s FnafRepairCI:I "*:S" | grep -m1 "FNAF_REPAIR_"' _ "$ADB" > "$RUNNER_TEMP/helper-result.txt" & LPID=$!
+timeout 60 python3 - "$ADB" > "$RUNNER_TEMP/helper-result.txt" <<'PYRESULT' & LPID=$!
+import subprocess,sys
+p=subprocess.Popen([sys.argv[1],"logcat","-v","brief","-s","FnafRepairCI:I","*:S"],stdout=subprocess.PIPE,text=True)
+try:
+ for line in p.stdout:
+  if "FNAF_REPAIR_" in line:
+   print(line.strip(),flush=True);break
+ else: raise RuntimeError("logcat ended before repair result")
+finally:
+ p.terminate()
+ try: p.wait(timeout=5)
+ except subprocess.TimeoutExpired: p.kill();p.wait()
+PYRESULT
 "$ADB" shell input tap "$X" "$Y"
 wait "$LPID" || { echo 'No patch completion log'; "$ADB" logcat -d -v brief | tail -120; exit 1; }
 cat "$RUNNER_TEMP/helper-result.txt"
