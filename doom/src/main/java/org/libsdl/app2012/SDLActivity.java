@@ -73,6 +73,11 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
 
     protected boolean useOpenTouch() { return true; }
 
+    // OpenTouch's shipped SDL nativeRunMain initializes the SDL thread JNI
+    // state but does not invoke SDL_main. The separate converted launcher can
+    // dispatch its own main after that initialization; the v7 game is unchanged.
+    protected void runLauncherAfterSdlSetup(String[] arguments) { }
+
     public static boolean mIsResumedCalled, mHasFocus;
     public static final boolean mHasMultiWindow = (Build.VERSION.SDK_INT >= 24);
 
@@ -1767,6 +1772,10 @@ class SDLMain implements Runnable {
         Log.v("SDL", "Running main function " + function + " from library " + library);
 
         SDLActivity.nativeRunMain(library, function, arguments);
+
+        if (!SDLActivity.OPENTOUCH_SDL_EXTRA && SDLActivity.mSingleton != null) {
+            SDLActivity.mSingleton.runLauncherAfterSdlSetup(arguments);
+        }
 
         if (SDLActivity.OPENTOUCH_SDL_EXTRA && SDLActivity.mSingleton != null && SDLActivity.mSurface != null) {
             SDLOpenTouch.RunApplication(SDLActivity.mSingleton, SDLActivity.mSingleton.getIntent(),

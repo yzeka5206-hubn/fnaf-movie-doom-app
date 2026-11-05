@@ -68,6 +68,11 @@ for abi in ['arm64-v8a','armeabi-v7a']:
     h=subprocess.check_output(['readelf','-h',str(lib)],text=True)
     syms=subprocess.check_output(['readelf','-sW',str(lib)],text=True)
     assert ('AArch64' if abi=='arm64-v8a' else 'ARM') in h and ' SDL_main' in syms
+    runner=ROOT/f'doom/src/main/libs/{abi}/libFnafMenuRunner.so'
+    runner_syms=subprocess.check_output(['readelf','-sW',str(runner)],text=True)
+    needed=subprocess.check_output(['readelf','-d',str(runner)],text=True)
+    assert 'Java_com_msa_freedoom_OriginalMenuActivity_nativeRunConvertedLauncher' in runner_syms
+    assert ' UND SDL_main' in runner_syms and '[libChowdren.so]' in needed
     if abi=='arm64-v8a':
         ph=subprocess.check_output(['readelf','-lW',str(lib)],text=True)
         for row in ph.splitlines():

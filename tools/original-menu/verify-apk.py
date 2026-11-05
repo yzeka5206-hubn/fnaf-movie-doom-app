@@ -34,17 +34,18 @@ with zipfile.ZipFile(APK) as z:
     dex = b''.join(z.read(n) for n in names if n.startswith('classes') and n.endswith('.dex'))
     for marker in [b'FNAF_DIAG_V7_2026', b'FNAF_SYSTEM_KEYBOARD_V7', b'LatchingSwitch',
                    b'OriginalMenuActivity', b'FnafLaunchProfile', b'onSingleplayerRequested',
-                   b'onLauncherNotice', b'libChowdren.so', b'0.9.0-original-menu-test']:
+                   b'onLauncherNotice', b'libChowdren.so', b'nativeRunConvertedLauncher', b'FnafMenuRunner', b'0.9.0-original-menu-test']:
         assert marker in dex, f'Missing marker {marker!r}'
     abis = {n.split('/')[1] for n in names if n.startswith('lib/') and n.count('/') >= 2}
     assert abis == {'arm64-v8a', 'armeabi-v7a'}, f'Unexpected ABIs: {abis}'
     for abi in sorted(abis):
-        for suffix in ['libChowdren.so','libSDL2.so','libopenal.so','libsaffal.so',
+        for suffix in ['libFnafMenuRunner.so','libChowdren.so','libSDL2.so','libopenal.so','libsaffal.so',
                        'libhidapi.so','libuzdoom.so','libtouchcontrols.so','libzmusic_uz.so']:
             name = f'lib/{abi}/{suffix}'
             assert name in names, f'Missing {name}'
         name = f'lib/{abi}/libChowdren.so'
         assert z.read(name) == (ROOT / f'doom/src/main/libs/{abi}/libChowdren.so').read_bytes()
+        assert z.read(f'lib/{abi}/libFnafMenuRunner.so') == (ROOT / f'doom/src/main/libs/{abi}/libFnafMenuRunner.so').read_bytes()
         for name in [n for n in names if n.startswith(f'lib/{abi}/') and n.endswith('.so')]:
             info = z.getinfo(name)
             assert info.compress_type == 0, f'Compressed library: {name}'
