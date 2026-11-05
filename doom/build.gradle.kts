@@ -33,3 +33,5 @@ tasks.named("assembleDebug") {
         check(old.isFile && old.renameTo(named)) { "Could not name the repair APK" }
     }
 }
+
+tasks.withType<JavaCompile>().configureEach { options.encoding = "UTF-8" }
