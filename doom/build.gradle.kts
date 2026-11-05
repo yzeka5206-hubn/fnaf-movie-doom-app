@@ -1,17 +1,17 @@
 plugins { alias(libs.plugins.android.application) }
 
-// One-time small offline updater for the direct-touch test.
+// One-time small offline updater for the settings and model test.
 // This branch does not build or alter the game itself.
 android {
     enableKotlin = false // This small helper contains Java only.
     namespace = "com.fnaf.moviedoom.repair"
     compileSdk = 36
     defaultConfig {
-        applicationId = "com.fnaf.moviedoom.touchpatch"
+        applicationId = "com.fnaf.moviedoom.modelpatch"
         minSdk = 33
         targetSdk = 36
-        versionCode = 2
-        versionName = "2.0"
+        versionCode = 1
+        versionName = "1.0"
     }
     sourceSets.getByName("main") {
         manifest.srcFile("repair/AndroidManifest.xml")
@@ -30,7 +30,7 @@ tasks.matching { it.name == "assembleDebug" }.configureEach {
     doLast {
         val dir = layout.buildDirectory.dir("outputs/apk/debug").get().asFile
         val old = dir.resolve("doom-debug.apk")
-        val named = dir.resolve("FNAF-Dokunma-Guncelleyici.apk")
+        val named = dir.resolve("FNAF-Ayar-Model-Guncelleyici.apk")
         check(old.isFile && old.renameTo(named)) { "Could not name the repair APK" }
     }
 }

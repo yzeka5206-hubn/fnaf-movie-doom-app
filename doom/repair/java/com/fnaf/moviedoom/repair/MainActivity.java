@@ -45,11 +45,11 @@ public class MainActivity extends Activity {
         LinearLayout body = new LinearLayout(this); body.setOrientation(LinearLayout.VERTICAL);
         body.setPadding(pad, dp(32), pad, dp(32)); body.setBackgroundColor(Color.rgb(20, 23, 29));
         scroller.addView(body);
-        TextView title = text("FNAF DOKUNMA GÜNCELLEMESİ", 25, true);
+        TextView title = text("FNAF AYAR VE MODEL GÜNCELLEMESİ", 25, true);
         body.addView(title);
-        TextView desc = text("Yeni dokunma sürümünü telefonda yüklü FNAF Menü Testi'nden hazırlar. " +
-                "Oyun dosyasını yeniden indirmez; internet kullanmaz. Yaklaşık 400 MB boş alan gerekir.\n\n" +
-                "Eski oyun uygulamana (v7) dokunmaz. Kurulu test bu işlem sırasında silinmez.", 16, false);
+        TextView desc = text("Yeni ayar ve model testini telefonda yüklü son FNAF Menü Testi'nden hazırlar. " +
+                "Büyük oyun dosyasını yeniden indirmez; internet kullanmaz. Yaklaşık 400 MB boş alan gerekir.\n\n" +
+                "Ayrı v7 oyununa dokunmaz. Kurulu test hazırlama sırasında silinmez.", 16, false);
         desc.setPadding(0, dp(16), 0, dp(18)); body.addView(desc);
         prepare = new Button(this); prepare.setText("YENİ APK'YI HAZIRLA");
         body.addView(prepare, new LinearLayout.LayoutParams(-1, -2));
@@ -114,7 +114,7 @@ public class MainActivity extends Activity {
             ContentResolver cr = getContentResolver();
             try {
                 ContentValues meta = new ContentValues();
-                meta.put(MediaStore.Downloads.DISPLAY_NAME, "FNAF_Dokunma_Test.apk");
+                meta.put(MediaStore.Downloads.DISPLAY_NAME, "FNAF_Ayar_Model_Test.apk");
                 meta.put(MediaStore.Downloads.MIME_TYPE, "application/vnd.android.package-archive");
                 meta.put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS);
                 meta.put(MediaStore.Downloads.IS_PENDING, 1);
@@ -128,7 +128,7 @@ public class MainActivity extends Activity {
                 ContentValues complete = new ContentValues(); complete.put(MediaStore.Downloads.IS_PENDING, 0);
                 if (cr.update(outputUri, complete, null, null) != 1) throw new IOException("Yeni APK tamamlanamadı.");
                 String fileName = displayName(cr, outputUri);
-                runOnUiThread(() -> finishWork("Hazır ve doğrulandı!\n\n1. Yeni sürüm farklı imzalıdır: kurmak için yalnızca eski ‘FNAF Menü Testi’ni kaldırman gerekir. Bu testin kendi kayıtları ve ayarları silinebilir; gerekiyorsa önce yedekle. Ayrı v7'yi kaldırma.\n\n2. Dosyalar → İndirilenler → " + fileName + " dosyasını aç ve yükle.\n\nİstersen işlemden sonra bu güncelleyiciyi kaldırabilirsin."));
+                runOnUiThread(() -> finishWork("Hazır ve doğrulandı!\n\n1. Yeni sürüm farklı imzalı: önce yalnızca eski ‘FNAF Menü Testi’ni kaldırman gerekir. Testin kayıtları ve ayarları silinebilir. Gerekliyse oyunun başlatıcı ayarlarındaki Yedekle düğmesiyle önce kayıtlarını yedekle; oyun içi tüm ayarlar yedeklenmeyebilir. Ayrı v7'yi kaldırma.\n\n2. Dosyalar → İndirilenler → " + fileName + " dosyasını aç ve yükle.\n\nİstersen işlemden sonra bu güncelleyiciyi kaldırabilirsin."));
             } catch (Exception e) {
                 if (outputUri != null) try { cr.delete(outputUri, null, null); } catch (Exception ignored) { }
                 String message = safeMessage(e);
@@ -143,7 +143,7 @@ public class MainActivity extends Activity {
         try (Cursor c = cr.query(uri, new String[]{OpenableColumns.DISPLAY_NAME}, null, null, null)) {
             if (c != null && c.moveToFirst()) { String n = c.getString(0); if (n != null && !n.isEmpty()) return n; }
         } catch (Exception ignored) { }
-        return "FNAF_Dokunma_Test.apk";
+        return "FNAF_Ayar_Model_Test.apk";
     }
     private static String safeMessage(Throwable t) {
         String s = t.getMessage();
