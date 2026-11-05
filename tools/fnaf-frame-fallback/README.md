@@ -1,9 +1,10 @@
 # GLES vertex-frame animation fallback (partial)
 
 The original Android GLES path did not apply IQM skeletal animation.
-`fnaf-model-frames-v1.pk3` is loaded *after* the original game. The separate
-static model addon is no longer loaded by the experimental skeletal build. It replaces only these actors' `MODELDEF` mappings with MD3 files
-baked from the original IQM frames:
+`fnaf-model-frames-v1.pk3` is loaded *after* the original game. It replaces only
+the following actors' `MODELDEF` mappings with MD3 files baked from the original
+IQM frames. The separate static-model addon is no longer loaded by the
+experimental skeletal build:
 
 | Actor | Source frames | Approx. GPU vertex buffer |
 | --- | ---: | ---: |

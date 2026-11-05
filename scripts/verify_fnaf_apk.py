@@ -11,7 +11,7 @@ from pathlib import Path
 BUILD_MARKER = b"FNAF_DIAG_V7_2026"
 REQUIRED_DEX_MARKERS = (
     BUILD_MARKER,
-    b"0.9.1-touch-test",
+    b"0.9.2-animation-test",
     b"FnafMenuActivity",
     b"FnafOptionsActivity",
     b"OriginalMenuActivity",
