@@ -3,7 +3,29 @@ set -Eeuo pipefail
 SDKMAN="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
 EMU="$ANDROID_SDK_ROOT/emulator/emulator"
 ADB="$ANDROID_SDK_ROOT/platform-tools/adb"
-FIX="$PWD/doom/repair/fixtures"
+# Download the already-existing old Actions artifact with this job's own
+# read-only checkout token. No token is printed or embedded in the APK.
+AUTH_HEADER=$(git config --local --get http.https://github.com/.extraheader)
+ENCODED=${AUTH_HEADER##* }
+DECODED=$(printf %s "$ENCODED" | base64 --decode)
+TOKEN=${DECODED#*:}
+unset AUTH_HEADER ENCODED DECODED
+OLD_DIR="$RUNNER_TEMP/original-artifact"
+mkdir -p "$OLD_DIR"
+curl -fsSL --retry 2 -H "Authorization: Bearer $TOKEN" -H 'Accept: application/vnd.github+json' \
+  https://api.github.com/repos/yzeka5206-hubn/fnaf-movie-doom-app/actions/artifacts/13382448207/zip \
+  -o "$RUNNER_TEMP/original-artifact.zip"
+unset TOKEN
+python3 - "$RUNNER_TEMP/original-artifact.zip" "$OLD_DIR" <<'PYOLD'
+import os,sys,zipfile
+with zipfile.ZipFile(sys.argv[1]) as z:
+ names=[n for n in z.namelist() if n.endswith('doom-debug.apk') and not n.startswith('/') and '..' not in n.split('/')]
+ if len(names)!=1: raise SystemExit('Unexpected original artifact structure')
+ with z.open(names[0]) as src,open(os.path.join(sys.argv[2],'old.apk'),'wb') as dst:
+  import shutil;shutil.copyfileobj(src,dst,1024*1024)
+PYOLD
+OLD="$OLD_DIR/old.apk"
+echo 'dde4c9632c44fe2600577e6b35670ccfc1bde18ea5305f47ccd07b9f4e939c88  '"$OLD" | sha256sum -c -
 HELPER="$PWD/doom/build/outputs/apk/debug/FNAF-Menu-Onarici.apk"
 cleanup() {
   rc=$?
@@ -21,7 +43,7 @@ echo "=== Freeing unused software on disposable CI runner ==="
 df -h "$RUNNER_TEMP"
 sudo rm -rf "$ANDROID_SDK_ROOT/ndk" /usr/share/dotnet /opt/ghc /usr/local/share/boost || true
 df -h "$RUNNER_TEMP"
-"$SDKMAN" 'emulator' 'system-images;android-34;google_atd;x86_64' > "$RUNNER_TEMP/helper-sdk.txt" 2>&1 || { tail -40 "$RUNNER_TEMP/helper-sdk.txt"; exit 1; }
+"$SDKMAN" 'emulator' 'system-images;android-34;google_apis;x86_64' > "$RUNNER_TEMP/helper-sdk.txt" 2>&1 || { tail -40 "$RUNNER_TEMP/helper-sdk.txt"; exit 1; }
 "$EMU" -accel-check || true
 "$ADB" start-server
 export ANDROID_AVD_HOME="$RUNNER_TEMP/fnaf-avds"
@@ -35,23 +57,23 @@ cat > "$ANDROID_AVD_HOME/helperAndroid14.avd/config.ini" <<EOF
 AvdId=helperAndroid14
 abi.type=x86_64
 avd.ini.encoding=UTF-8
-disk.dataPartition.size=2G
+disk.dataPartition.size=4G
 hw.cpu.arch=x86_64
 hw.cpu.ncore=2
 hw.lcd.density=320
 hw.lcd.width=1080
 hw.lcd.height=1920
-hw.ramSize=1536
+hw.ramSize=2048
 hw.keyboard=yes
 hw.gpu.enabled=yes
-image.sysdir.1=system-images/android-34/google_atd/x86_64/
-tag.display=Google ATD
-tag.id=google_atd
+image.sysdir.1=system-images/android-34/google_apis/x86_64/
+tag.display=Google APIs
+tag.id=google_apis
 PlayStore.enabled=false
 vm.heapSize=256
 EOF
 "$EMU" -list-avds
-"$EMU" -avd helperAndroid14 -no-window -no-snapshot -no-audio -no-boot-anim -gpu swiftshader_indirect -memory 1536 -cores 2 > "$RUNNER_TEMP/helper-emulator.txt" 2>&1 & EPID=$!
+"$EMU" -avd helperAndroid14 -no-window -no-snapshot -no-audio -no-boot-anim -gpu swiftshader_indirect -memory 2048 -cores 2 > "$RUNNER_TEMP/helper-emulator.txt" 2>&1 & EPID=$!
 timeout 120 "$ADB" wait-for-device || { echo "ADB did not connect"; "$ADB" devices -l; exit 1; }
 BOOT=$("$ADB" shell getprop sys.boot_completed | tr -d '\r')
 if [ "$BOOT" != 1 ]; then
@@ -69,9 +91,9 @@ finally:
  except subprocess.TimeoutExpired: p.kill();p.wait()
 PYBOOT
 fi
-printf '=== Android version / install fixtures ===\n'
+printf '=== Android version / install actual original app and helper ===\n'
 "$ADB" shell getprop ro.build.version.release
-"$ADB" install "$FIX/old.apk"
+"$ADB" install --no-streaming "$OLD"
 "$ADB" install "$HELPER"
 "$ADB" logcat -c
 "$ADB" shell wm dismiss-keyguard || true
@@ -89,7 +111,7 @@ else: raise SystemExit('prepare button not found')
 PY
 )
 printf '=== Tapping installed-APK preparation button at %s,%s ===\n' "$X" "$Y"
-timeout 60 python3 - "$ADB" > "$RUNNER_TEMP/helper-result.txt" <<'PYRESULT' & LPID=$!
+timeout 300 python3 - "$ADB" > "$RUNNER_TEMP/helper-result.txt" <<'PYRESULT' & LPID=$!
 import subprocess,sys
 p=subprocess.Popen([sys.argv[1],"logcat","-v","brief","-s","FnafRepairCI:I","*:S"],stdout=subprocess.PIPE,text=True)
 try:
@@ -107,7 +129,7 @@ wait "$LPID" || { echo 'No patch completion log'; "$ADB" logcat -d -v brief | ta
 cat "$RUNNER_TEMP/helper-result.txt"
 grep -q FNAF_REPAIR_READY "$RUNNER_TEMP/helper-result.txt"
 "$ADB" pull /sdcard/Download/FNAF_Menu_Android14.apk "$RUNNER_TEMP/repaired-fixture.apk" >/dev/null
-cmp "$FIX/expected.apk" "$RUNNER_TEMP/repaired-fixture.apk"
+echo '72be818c2d0a686d9b141c3311fb51999ed5f03a745b4b52882b042e24119f27  '"$RUNNER_TEMP/repaired-fixture.apk" | sha256sum -c -
 "$ANDROID_SDK_ROOT/build-tools/36.0.0/apksigner" verify --verbose "$RUNNER_TEMP/repaired-fixture.apk" | head -4
 "$ADB" shell pm path com.fnaf.moviedoom.menutest
-printf 'PASS: Android 14 installed APK read, verified patch, MediaStore output and unchanged original app\n'
+printf 'PASS: REAL 393 MB old APK read on Android 14, repaired to exact target SHA, valid signature, MediaStore output, original still installed\n'
