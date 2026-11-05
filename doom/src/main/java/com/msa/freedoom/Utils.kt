@@ -75,10 +75,27 @@ object Utils {
         copyGameAsset(responsibleActivity, "game/FNAFMovie.ipk3", fullBaseDir)
         copyGameAsset(responsibleActivity, "game/FiveNightsAtFreddysDoomMOVIE.wad", fullModDir)
         copyGameAsset(responsibleActivity, "game/FiveNightsAtFreddysDoomMOVIE.pk3", fullModDir)
+        copyTouchAdapter(responsibleActivity, fullModDir)
         // This optional addon is not bundled in every build. Its absence must
         // not stop a fresh install from launching the required movie packages.
         if (responsibleActivity.assets.list("game")?.contains("camera_move.pk3") == true) {
             copyGameAsset(responsibleActivity, "game/camera_move.pk3", fullModDir)
+        }
+    }
+
+    @Throws(IOException::class)
+    private fun copyTouchAdapter(ctx: Context, destdir: String) {
+        val dir = File(destdir)
+        dir.mkdirs()
+        val target = File(dir, "fnaf-touch-v1.pk3")
+        val tmp = File(dir, ".fnaf-touch-v1.tmp")
+        try {
+            ctx.assets.open("game/fnaf-touch-v1.pk3").use { input ->
+                FileOutputStream(tmp).use { out -> copyFile(input, out) }
+            }
+            if (!tmp.renameTo(target)) throw IOException("Dokunma dosyası hazırlanamadı")
+        } finally {
+            if (tmp.exists()) tmp.delete()
         }
     }
 

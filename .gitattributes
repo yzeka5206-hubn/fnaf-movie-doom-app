@@ -2,3 +2,5 @@
 doom/src/main/assets/game/*.pk3 filter=lfs diff=lfs merge=lfs -text
 doom/src/main/assets/game/*.wad filter=lfs diff=lfs merge=lfs -text
 doom/src/main/assets/game/*.ipk3 filter=lfs diff=lfs merge=lfs -text
+# The small input adapter is ordinary Git data, not an LFS object.
+doom/src/main/assets/game/fnaf-touch-v1.pk3 -filter -diff -merge -text

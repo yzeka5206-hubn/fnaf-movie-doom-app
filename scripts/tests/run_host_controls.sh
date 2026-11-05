@@ -15,13 +15,18 @@ T=$(mktemp -d)
 trap 'rm -rf "$T"' EXIT
 python3 "$ROOT/scripts/tests/create_fake_android.py" "$T/fake-src"
 mkdir -p "$T/fakes" "$T/game"
-find "$T/fake-src" -name '*.java' -print0 | xargs -0 javac -source 11 -target 11 -d "$T/fakes"
+find "$T/fake-src" -name '*.java' -print0 | xargs -0 javac -encoding UTF-8 -source 11 -target 11 -d "$T/fakes"
 "$KOTLINC" -jvm-target 11 -classpath "$ANDROID_JAR:$T/fakes" \
   "$ROOT/doom/src/main/java/com/msa/freedoom/FnafInputState.kt" \
+  "$ROOT/doom/src/main/java/com/msa/freedoom/FnafUiState.kt" \
   "$ROOT/doom/src/main/java/com/msa/freedoom/Game.kt" -d "$T/game"
-javac -source 11 -target 11 -cp "$T/fakes:$T/game:$STDLIB" -d "$T/fakes" \
+javac -encoding UTF-8 -source 11 -target 11 -cp "$T/fakes:$T/game:$STDLIB" -d "$T/fakes" \
   "$ROOT/scripts/tests/GameOverlayHostTest.java"
 java -cp "$T/fakes:$T/game:$STDLIB" com.msa.freedoom.GameOverlayHostTest
+"$KOTLINC" -jvm-target 11 \
+  "$ROOT/doom/src/main/java/com/msa/freedoom/FnafUiState.kt" \
+  "$ROOT/scripts/tests/FnafUiStateTest.kt" -include-runtime -d "$T/ui-test.jar"
+java -jar "$T/ui-test.jar"
 ROOT="$ROOT" OUT="$T/SDLInputConnection.java" python3 - <<'PY'
 import os
 from pathlib import Path
@@ -33,8 +38,8 @@ header = ('package org.libsdl.app2012;\nimport android.view.View;\n'
           'import android.view.KeyEvent;\nimport android.view.inputmethod.BaseInputConnection;\n')
 Path(os.environ['OUT']).write_text(header + src[a:b] + '\n')
 PY
-javac -source 11 -target 11 -cp "$ANDROID_JAR:$T/fakes" -d "$T/java-android" "$T/SDLInputConnection.java"
-javac -source 11 -target 11 -cp "$T/fakes" -d "$T/fakes" "$T/SDLInputConnection.java" \
+javac -encoding UTF-8 -source 11 -target 11 -cp "$ANDROID_JAR:$T/fakes" -d "$T/java-android" "$T/SDLInputConnection.java"
+javac -encoding UTF-8 -source 11 -target 11 -cp "$T/fakes" -d "$T/fakes" "$T/SDLInputConnection.java" \
   "$ROOT/scripts/tests/SoftKeyboardHostTest.java"
 java -cp "$T/fakes" org.libsdl.app2012.SoftKeyboardHostTest
 # Also compile and exercise the real native-message handler. The Android jar

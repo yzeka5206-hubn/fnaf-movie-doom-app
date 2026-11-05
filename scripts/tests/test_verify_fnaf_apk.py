@@ -26,7 +26,7 @@ class ApkVerifierTest(unittest.TestCase):
     def test_good_apk(self):
         with tempfile.TemporaryDirectory() as temp:
             result = verifier.validate_apk(self.make_apk(temp))
-            self.assertEqual(len(result), 3)
+            self.assertEqual(len(result), len(SMALL_ASSETS))
 
     @patch.object(verifier, "ASSETS", SMALL_ASSETS)
     def test_stale_apk_rejected(self):

@@ -858,6 +858,11 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
     public static native void onNativeResize();
     public static native void onNativeKeyDown(int keycode);
     public static native void onNativeKeyUp(int keycode);
+
+    /** Feed one app-keyboard character through SDL's actual text input path. */
+    public static void fnafCommitText(String text) {
+        if (text != null && !text.isEmpty()) SDLInputConnection.nativeCommitText(text, 1);
+    }
     public static native boolean onNativeSoftReturnKey();
     public static native void onNativeKeyboardFocusLost();
     public static native void onNativeMouse(int button, int action, float x, float y, boolean relative);

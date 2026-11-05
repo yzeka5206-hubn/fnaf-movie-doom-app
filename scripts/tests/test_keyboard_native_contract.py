@@ -20,11 +20,15 @@ class KeyboardBridgeTest(unittest.TestCase):
         self.assertIn("SDLActivity.showTextInput(0, 0, 1, 1)", handler)
         self.assertIn("return true;", handler)
 
-    def test_overlay_activates_native_sdl_text_input(self):
+    def test_overlay_uses_embedded_keyboard_and_sdl_text_bridge(self):
         source = GAME.read_text()
-        self.assertRegex(source, r"ACT_SHOW_KEYBOARD\s*=\s*26")
-        self.assertIn("SDLOpenTouch.fnafAction(1, ACT_SHOW_KEYBOARD)", source)
-        self.assertIn("SDLActivity.showTextInput(0, 0, 1, 1)", source)
+        sdl = (ROOT / "doom/src/main/java/org/libsdl/app2012/SDLActivity.java").read_text()
+        self.assertIn("setKeyboardOpen(!keyboardOpen)", source)
+        self.assertIn("createEmbeddedKeyboard()", source)
+        self.assertIn("SDLActivity.fnafCommitText(text)", source)
+        self.assertIn("SDLInputConnection.nativeCommitText(text, 1)", sdl)
+        for key in ("KEYCODE_DEL", "KEYCODE_ENTER", "KEYCODE_DPAD_LEFT", "KEYCODE_DPAD_RIGHT"):
+            self.assertIn(key, source)
 
 
 if __name__ == "__main__":

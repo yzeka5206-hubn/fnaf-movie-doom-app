@@ -1,0 +1,150 @@
+version "4.12.0"
+
+// Adapter for Android touch input. Uses the original game's character selector
+// and the engine's own menus, and never generates a gameplay mouse click.
+class FnafDirectTouchHandler : StaticEventHandler
+{
+    ui int fnafSession;
+    ui int fnafLastMode;
+    ui bool fnafPublished;
+    ui int fnafClickTicks;
+    ui Menu fnafCapturedMenu;
+    ui bool fnafCapturedBack;
+
+    ui void FnafReleaseCapture()
+    {
+        if (fnafCapturedMenu)
+        {
+            fnafCapturedMenu.mBackbuttonSelected = false;
+            fnafCapturedMenu.SetCapture(false);
+        }
+        fnafCapturedMenu = null;
+        fnafCapturedBack = false;
+    }
+
+    // Menu.MouseEventBack is protected: replicate its hit test.
+    ui bool FnafBackAt(int x, int y)
+    {
+        if (m_show_backbutton < 0) return false;
+        let tex = TexMan.CheckForTexture(gameinfo.mBackButton, TexMan.Type_MiscPatch);
+        if (!tex.IsValid()) return false;
+        Vector2 size = TexMan.GetScaledSize(tex);
+        int w = int(size.x + 0.5) * CleanXfac;
+        int h = int(size.y + 0.5) * CleanYfac;
+        if (m_show_backbutton & 1) x -= screen.GetWidth() - w;
+        if (m_show_backbutton & 2) y -= screen.GetHeight() - h;
+        return x >= 0 && x < w && y >= 0 && y < h;
+    }
+
+    ui MouseDriverHandler FnafDriver()
+    {
+        return MouseDriverHandler(StaticEventHandler.Find('MouseDriverHandler'));
+    }
+
+    // 0 = gameplay, 1 = the game's character selection, 2 = engine menu.
+    ui int FnafMode()
+    {
+        if (menuactive != Menu.Off) return 2;
+        let driver = FnafDriver();
+        if (driver && driver.IsMenuOpen()) return 1;
+        return 0;
+    }
+
+    ui void FnafPublishMode(bool force)
+    {
+        int mode = FnafMode();
+        if (fnafSession && (force || !fnafPublished || fnafLastMode != mode))
+        {
+            Console.PrintfEx(PRINT_LOG, "FNAF_TOUCH_STATE:%d:%d", fnafSession, mode);
+            fnafLastMode = mode;
+            fnafPublished = true;
+        }
+    }
+
+    override void UiTick()
+    {
+        FnafPublishMode(false);
+        if (FnafMode() == 2) BackbuttonTime = 4 * GameTicRate;
+        if (fnafCapturedMenu && (FnafMode() != 2 || Menu.GetCurrentMenu() != fnafCapturedMenu))
+            FnafReleaseCapture();
+        if (fnafClickTicks > 0)
+        {
+            if (FnafMode() != 1) fnafClickTicks = 0;
+            else if (--fnafClickTicks == 0)
+            {
+                // ACS updates selection/hover every four tics; position first.
+                EventHandler.SendNetworkEvent("NetClick");
+            }
+        }
+    }
+
+    override void InterfaceProcess(ConsoleEvent e)
+    {
+        if (e.Name ~== "FnafTouchPing")
+        {
+            fnafSession = e.Args[0];
+            FnafPublishMode(true);
+            return;
+        }
+        if (!(e.Name ~== "FnafTouch")) return;
+        FnafHandleTouch(e.Args[0], e.Args[1], e.Args[2]);
+    }
+
+    ui void FnafHandleTouch(int rawX, int rawY, int phase)
+    {
+        int nx = clamp(rawX, 0, 65535);
+        int ny = clamp(rawY, 0, 65535);
+        // phase: 0 down, 1 move, 2 up, 3 cancel
+        int mode = FnafMode();
+        if (mode == 1)
+        {
+            let driver = FnafDriver();
+            if (!driver) return;
+            if (phase == 3) { fnafClickTicks = 0; return; }
+            if (phase == 0) fnafClickTicks = 0;
+            driver.mPos = (nx, ny);
+            driver.initialized = true;
+            EventHandler.SendNetworkEvent("NetMouse", nx, ny);
+            if (phase == 2) fnafClickTicks = 4;
+            return;
+        }
+
+        if (mode == 2 && (menuactive == Menu.On || menuactive == Menu.OnNoPause))
+        {
+            let current = Menu.GetCurrentMenu();
+            if (!current) return;
+            int x = int(double(nx) * screen.GetWidth() / 65535.0);
+            int y = int(double(ny) * screen.GetHeight() / 65535.0);
+            if (phase == 0)
+            {
+                FnafReleaseCapture();
+                fnafCapturedMenu = current;
+                fnafCapturedBack = FnafBackAt(x, y);
+                if (fnafCapturedBack)
+                {
+                    current.mBackbuttonSelected = true;
+                    current.SetCapture(true);
+                }
+                else if (current.MouseEvent(Menu.MOUSE_Click, x, y) && current == Menu.GetCurrentMenu())
+                    current.SetCapture(true);
+            }
+            else if (phase == 1 && fnafCapturedMenu == current)
+            {
+                if (fnafCapturedBack) current.mBackbuttonSelected = FnafBackAt(x, y);
+                else current.MouseEvent(Menu.MOUSE_Move, x, y);
+            }
+            else if ((phase == 2 || phase == 3) && fnafCapturedMenu == current)
+            {
+                bool goBack = fnafCapturedBack && FnafBackAt(x, y);
+                bool wasBack = fnafCapturedBack;
+                FnafReleaseCapture();
+                if (phase == 2)
+                {
+                    if (goBack) current.MenuEvent(Menu.MKEY_Back, true);
+                    else if (!wasBack) current.MouseEvent(Menu.MOUSE_Release, x, y);
+                }
+            }
+        }
+        else if (phase == 2 || phase == 3) FnafReleaseCapture();
+    }
+}

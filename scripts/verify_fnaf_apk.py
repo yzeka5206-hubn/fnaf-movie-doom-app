@@ -11,6 +11,7 @@ BUILD_MARKER = b"FNAF_DIAG_V7_2026"
 REQUIRED_DEX_MARKERS = (
     BUILD_MARKER,
     b"0.8.0-menu",
+    b"0.9.1-touch-test",
     b"FnafMenuActivity",
     b"FnafOptionsActivity",
     b"OYUN HAZIRLANIYOR",
@@ -18,13 +19,16 @@ REQUIRED_DEX_MARKERS = (
     b"forwardSoftEnter",
     b"FNAF_SYSTEM_KEYBOARD_V7",
     b"KLAVYE",
-    b"FARE",
+    b"FnafUiStateReader",
+    b"FnafTouchPing",
+    b"fnafCommitText",
     b"SAAT",
 )
 ASSETS = {
     "assets/game/FNAFMovie.ipk3": (10_000, b"PK\x03\x04"),
     "assets/game/FiveNightsAtFreddysDoomMOVIE.wad": (10_000_000, b"PWAD"),
     "assets/game/FiveNightsAtFreddysDoomMOVIE.pk3": (100_000_000, b"PK\x03\x04"),
+    "assets/game/fnaf-touch-v1.pk3": (500, b"PK\x03\x04"),
 }
 
 
@@ -70,7 +74,7 @@ def main() -> int:
                 digest.update(chunk)
         checksum = apk.with_name(apk.name + ".sha256")
         checksum.write_text(f"{digest.hexdigest()}  {apk.name}\n", encoding="utf-8")
-        print(f"Verified {apk.name}: v8 native menu, v7 control markers and all three real game assets present")
+        print(f"Verified {apk.name}: native menu, direct-touch controls, bundled adapter and real game assets present")
         for name, size in sizes.items():
             print(f"  {name}: {size} bytes")
         print(f"SHA-256: {digest.hexdigest()}")

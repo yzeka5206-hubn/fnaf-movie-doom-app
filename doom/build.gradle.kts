@@ -12,8 +12,8 @@ android {
         applicationId = "com.fnaf.moviedoom"
         minSdk = 33
         targetSdk = 36
-        versionCode = 10
-        versionName = "0.9.0-original-menu-test"
+        versionCode = 11
+        versionName = "0.9.1-touch-test"
         manifestPlaceholders["fnafAppLabel"] = "FNAF Movie Doom"
 
         // The launcher and the game both ship ARM native libraries; do not

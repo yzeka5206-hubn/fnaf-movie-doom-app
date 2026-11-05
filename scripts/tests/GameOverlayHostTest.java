@@ -5,93 +5,96 @@ import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.FrameLayout;
 import android.widget.TextView;
+import java.lang.reflect.Method;
 import org.libsdl.app.EventLog;
-import java.util.*;
+import org.libsdl.app.SDLOpenTouch;
 
 public class GameOverlayHostTest {
-    static void check(boolean ok, String reason) {
-        if (!ok) throw new AssertionError(reason + " | events=" + EventLog.events);
+    private static void check(boolean ok, String message) {
+        if (!ok) throw new AssertionError(message + " | events=" + EventLog.events);
     }
-    static void events(String... expected) {
-        check(EventLog.events.equals(Arrays.asList(expected)), "Expected " + Arrays.toString(expected));
-    }
-    static TextView find(View root, String label) {
-        if (root instanceof TextView && ((TextView)root).getText().toString().startsWith(label)) return (TextView)root;
-        if (root instanceof ViewGroup) for (View v : ((ViewGroup)root).children) {
-            TextView found=find(v,label); if(found!=null) return found;
+    private static boolean has(String s) { return EventLog.events.contains(s); }
+    private static TextView find(View v, String text) {
+        if (v.getVisibility() != View.VISIBLE) return null;
+        if (v instanceof TextView && ((TextView)v).getText().toString().equals(text)) return (TextView)v;
+        if (v instanceof ViewGroup) for (View child : ((ViewGroup)v).children) {
+            TextView result = find(child, text); if (result != null) return result;
         }
         return null;
     }
-    static TextView button(Game g, String label) {
-        TextView v=find(g.root,label); check(v!=null,"Missing button "+label); return v;
+    private static TextView button(Game g, String text) {
+        TextView result = find(g.root, text); check(result != null, "Missing button " + text); return result;
     }
-    static void down(View v) { v.dispatchTouchEvent(new MotionEvent(MotionEvent.ACTION_DOWN,10,10)); }
-    static void up(View v) { v.dispatchTouchEvent(new MotionEvent(MotionEvent.ACTION_UP,10,10)); }
-    static void tap(View v) { down(v); up(v); }
-    static void clean() { EventLog.clear(); Handler.clear(); }
-    public static void main(String[] args) {
+    private static void touch(View view, int action, float x, float y) {
+        view.dispatchTouchEvent(new MotionEvent(action, x, y));
+    }
+    private static void down(View view) { touch(view, MotionEvent.ACTION_DOWN, 10, 10); }
+    private static void up(View view) { touch(view, MotionEvent.ACTION_UP, 10, 10); }
+    private static void tap(View view) { down(view); up(view); }
+    private static void mode(Game game, int state) throws Exception {
+        Method method = Game.class.getDeclaredMethod("setGameUiMode", int.class);
+        method.setAccessible(true); method.invoke(game, state);
+    }
+    private static void margin(View v, int right, int bottom) {
+        FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams)v.getLayoutParams();
+        check(lp.rightMargin == right * 3 && lp.bottomMargin == bottom * 3, "wrong FENER/EGIL position");
+    }
+    public static void main(String[] args) throws Exception {
+        Handler.clear(); SDLOpenTouch.ready = true;
         Game g = new Game(); g.onCreate(null);
-        TextView al=button(g,"AL"), light=button(g,"FENER"), watch=button(g,"SAAT"),
-                 crouch=button(g,"EGIL"), mouse=button(g,"FARE"), click=button(g,"TIK"),
-                 kb=button(g,"KLAVYE"), menu=button(g,"MENU");
-        ViewGroup root=(ViewGroup)g.root;
-        View look=root.children.get(0), joystick=root.children.get(1);
+        TextView fener = button(g, "FENER"), kos = button(g, "KOS"), egil = button(g, "EGIL");
+        TextView saat = button(g, "SAAT"), keyboard = button(g, "KLAVYE"), al = button(g, "AL");
+        check(find(g.root, "FARE") == null && find(g.root, "TIK") == null, "old mouse buttons must not exist");
+        margin(fener, 122, 128); margin(egil, 132, 36);
 
-        clean(); tap(al); events("KD:"+KeyEvent.KEYCODE_E,"KU:"+KeyEvent.KEYCODE_E);
-        System.out.println("PASS AL sends only E");
+        EventLog.clear(); tap(al);
+        check(has("KD:33") && has("KU:33") && !has("A:1:13"), "AL must send E, not attack");
+        EventLog.clear(); tap(kos);
+        check(has("A:1:10") && has("KD:59") && !has("A:0:10") && !has("KU:59"), "run stays enabled after release");
+        check(kos.getText().toString().contains("ACIK"), "run indicator");
+        tap(kos); check(has("A:0:10") && has("KU:59"), "second tap stops run");
+        EventLog.clear(); tap(saat); check(has("A:1:64") && !has("A:0:64"), "watch latch");
+        tap(saat); check(has("A:0:64"), "watch release");
+        EventLog.clear(); tap(egil); check(has("A:1:15") && !has("A:0:15"), "crouch latch");
+        tap(egil); check(has("A:0:15"), "crouch release");
+        EventLog.clear(); tap(fener); check(has("A:1:13"), "flashlight pulse on");
+        Handler.advance(150); check(has("A:0:13"), "flashlight pulse off");
 
-        clean(); down(light); Handler.advance(149); up(light); events("A:1:13");
-        Handler.advance(1); events("A:1:13","A:0:13"); Handler.advance(2000);
-        events("A:1:13","A:0:13");
-        System.out.println("PASS flashlight is one short press even when held");
+        ViewGroup root = (ViewGroup)g.root; View look = root.children.get(0), stick = root.children.get(1);
+        EventLog.clear(); touch(stick, MotionEvent.ACTION_DOWN, 200, 200); touch(stick, MotionEvent.ACTION_MOVE, 200, 20); touch(stick, MotionEvent.ACTION_UP, 200, 20);
+        check(has("KD:51") && has("KU:51"), "working WASD walk remains");
+        EventLog.clear(); touch(look, MotionEvent.ACTION_DOWN, 100, 100); touch(look, MotionEvent.ACTION_MOVE, 130, 140); touch(look, MotionEvent.ACTION_UP, 130, 140);
+        check(has("M:0:2:-30.0:-40.0:true"), "camera axes remain corrected");
+        check(EventLog.events.stream().anyMatch(x -> x.startsWith("LOOK:-0.063") && x.endsWith(":-0.0165")), "analog look remains corrected");
 
-        clean(); tap(watch); events("A:1:64"); check(watch.getText().toString().contains("ACIK"),"Watch indicator on");
-        tap(watch); events("A:1:64","A:0:64"); check(!watch.getText().toString().contains("ACIK"),"Watch indicator off");
-        tap(crouch); tap(crouch); events("A:1:64","A:0:64","A:1:15","A:0:15");
-        System.out.println("PASS watch and crouch are tap-on/tap-off");
+        EventLog.clear(); tap(kos); tap(fener); mode(g, 1);
+        check(has("A:0:10") && has("KU:59") && has("A:0:13"), "menu releases run and flashlight");
+        check(al.getVisibility() == View.GONE && stick.getVisibility() == View.GONE, "selector exposes touch area");
+        EventLog.clear(); touch(look, MotionEvent.ACTION_DOWN, 285, 427.5f); touch(look, MotionEvent.ACTION_UP, 285, 427.5f);
+        check(has("CMD:interfaceevent FnafTouch 32768 49151 0") && has("CMD:interfaceevent FnafTouch 32768 49151 2"), "character tap coordinates");
+        check(!has("A:1:13") && EventLog.events.stream().noneMatch(x -> x.startsWith("M:1:")), "tap must not toggle flashlight or inject Mouse1");
+        EventLog.clear(); touch(look, MotionEvent.ACTION_DOWN, -10, 9999); touch(look, MotionEvent.ACTION_CANCEL, -10, 9999);
+        check(has("CMD:interfaceevent FnafTouch 0 65535 0") && has("CMD:interfaceevent FnafTouch 0 65535 3"), "coordinate clamp and cancel");
+        mode(g, 2); EventLog.clear(); touch(look, MotionEvent.ACTION_DOWN, 285, 285); Handler.advance(40);
+        touch(look, MotionEvent.ACTION_MOVE, 300, 320); touch(look, MotionEvent.ACTION_UP, 300, 320);
+        check(has("CMD:interfaceevent FnafTouch 32768 32768 0") && has("CMD:interfaceevent FnafTouch 34492 36792 1") && has("CMD:interfaceevent FnafTouch 34492 36792 2"), "menu drag/click");
+        mode(g, 0); check(al.getVisibility() == View.VISIBLE, "controls return on gameplay");
+        EventLog.clear(); touch(look, MotionEvent.ACTION_DOWN, 285, 285); touch(look, MotionEvent.ACTION_UP, 285, 285);
+        check(has("CMD:interfaceevent FnafTouch 32768 32768 0") && !has("A:1:13"), "late-state tap is guarded");
 
-        clean(); look.dispatchTouchEvent(new MotionEvent(MotionEvent.ACTION_DOWN,100,100));
-        look.dispatchTouchEvent(new MotionEvent(MotionEvent.ACTION_MOVE,130,140));
-        look.dispatchTouchEvent(new MotionEvent(MotionEvent.ACTION_UP,130,140));
-        check(EventLog.events.size()==2, "Expected SDL + analog camera events");
-        check(EventLog.events.get(0).equals("M:0:2:-30.0:-40.0:true"), "Camera reverses both mouse axes");
-        check(EventLog.events.get(1).startsWith("LOOK:-0.063"), "Camera reverses analog pitch");
-        check(EventLog.events.get(1).endsWith(":-0.0165"), "Camera reverses analog yaw");
-        System.out.println("PASS both camera directions reversed on both input paths");
-
-        clean(); tap(watch); tap(crouch); EventLog.clear(); tap(mouse);
-        check(EventLog.events.contains("A:0:64") && EventLog.events.contains("A:0:15"),"Mouse mode releases both latches");
-        check(al.getVisibility()==View.GONE && joystick.getVisibility()==View.GONE && click.getVisibility()==View.VISIBLE,"Mouse mode visibility");
-        check(EventLog.events.stream().noneMatch(e -> e.equals("MENU") || e.startsWith("KD:")),"Mouse mode should not send escape or enter");
-        clean(); look.dispatchTouchEvent(new MotionEvent(MotionEvent.ACTION_DOWN,100,100));
-        look.dispatchTouchEvent(new MotionEvent(MotionEvent.ACTION_MOVE,130,140));
-        look.dispatchTouchEvent(new MotionEvent(MotionEvent.ACTION_UP,130,140));
-        events("M:0:2:30.0:40.0:true");
-        clean(); tap(click); events("M:1:0:0.0:0.0:true","M:0:1:0.0:0.0:true");
-        clean(); down(click); tap(mouse);
-        events("M:1:0:0.0:0.0:true","M:0:1:0.0:0.0:true");
-        check(click.getVisibility()==View.GONE && al.getVisibility()==View.VISIBLE,"Gameplay restored when mouse closes");
-        System.out.println("PASS relative cursor and real SDL left click; no duplicate analog look or ESC");
-
-        clean(); tap(kb); events("A:1:26"); Handler.advance(700);
-        events("A:1:26","KEYBOARD_VIEW");
-        System.out.println("PASS keyboard requests SDL text input and fallback editor");
-
-        clean(); joystick.dispatchTouchEvent(new MotionEvent(MotionEvent.ACTION_DOWN,200,200));
-        joystick.dispatchTouchEvent(new MotionEvent(MotionEvent.ACTION_MOVE,200,20));
-        joystick.dispatchTouchEvent(new MotionEvent(MotionEvent.ACTION_UP,200,20));
-        events("KD:"+KeyEvent.KEYCODE_W,"KU:"+KeyEvent.KEYCODE_W);
-        System.out.println("PASS working WASD movement remains unchanged");
-
-        clean(); tap(watch); tap(crouch); down(al); EventLog.clear(); g.onPause();
-        check(EventLog.events.contains("A:0:64") && EventLog.events.contains("A:0:15") && EventLog.events.contains("KU:"+KeyEvent.KEYCODE_E),"Pause releases held inputs");
-        check(!watch.getText().toString().contains("ACIK") && !crouch.getText().toString().contains("ACIK"),"Pause resets latch indicators");
-        EventLog.clear(); up(al); events();
-        System.out.println("PASS pause releases latched and held inputs without double release");
-
-        clean(); tap(watch); EventLog.clear(); tap(menu); events("A:0:64","MENU");
-        System.out.println("PASS explicit MENU releases inputs before opening menu");
-        System.out.println("ALL GAME OVERLAY HOST TESTS PASSED");
+        EventLog.clear(); tap(keyboard);
+        check(keyboard.getText().toString().contains("ACIK") && al.getVisibility() == View.GONE, "keyboard opens and hides controls");
+        button(g, "a").click(); check(has("KD:29") && has("KU:29") && has("TEXT:a"), "ASCII key and SDL text");
+        EventLog.clear(); button(g, "ğ").click(); check(has("TEXT:ğ"), "Turkish character");
+        EventLog.clear(); button(g, "⇧").click(); button(g, "İ").click(); check(has("TEXT:İ"), "Turkish uppercase");
+        EventLog.clear(); button(g, "⌫").click(); button(g, "←").click(); button(g, "ENTER").click();
+        check(has("KD:67") && has("KU:67") && has("KD:21") && has("KD:66"), "backspace, arrow, enter");
+        button(g, "?123").click(); EventLog.clear(); button(g, "@").click(); check(has("TEXT:@"), "symbols");
+        tap(keyboard); check(keyboard.getText().toString().equals("KLAVYE") && al.getVisibility() == View.VISIBLE, "same key closes keyboard");
+        EventLog.clear(); tap(kos); tap(egil); tap(fener); g.onPause();
+        check(has("A:0:10") && has("KU:59") && has("A:0:15") && has("A:0:13"), "pause releases latched inputs");
+        System.out.println("PASS direct touch, swapped buttons, run latch, walking, embedded keyboard, and lifecycle releases");
     }
 }
