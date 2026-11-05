@@ -43,9 +43,17 @@ its zero weights suppress animation. The MD3 addon stays loaded unchanged.
   and repeat with `animatronics` and `other`. These compare sampled original
   IQM vertices and normals, first/middle/last frames of each named clip, with a
   CPU reference. They require NumPy, Mesa EGL/GLES3 and the real game archive.
-* `make_engine_fixture.py` constructs an independent small-room WAD/PK3 from
-  those game assets for a patched desktop GLES engine. It is not a replacement
-  for the original game or an Android test. Generated fixtures stay local.
+* `python3 tools/fnaf-gles-skinning/make_engine_fixture.py GAME.pk3 Mike OUT`
+  constructs a tiny room with three live `Walk` actors (world/legs/arm). Other
+  accepted groups are the seven remaining player names and Freddy, Bonnie,
+  Chica, Foxy or SpringBonnie. An optional final integer selects a fixed
+  zero-rate Walk frame for comparisons with a desktop GL reference. The tool
+  checks the animation exists and that a requested frame is in range. Generate
+  nodes with `zdbsp -X -o OUT/fixture-nodes.wad OUT/fixture.wad`, and load the
+  resulting WAD and `OUT/fixture.pk3` with an independently installed IWAD.
+  Fixtures are diagnostic only, stay local, and are neither the game nor an
+  Android test. Their dummy `FrameIndex` seeds the reference engine's sprite
+  hash: a `BaseFrame`-only isolated room can divide by zero during startup.
 
 The mathematical tests sample vertices and frames; they are not proof of
 whole-game behavior, phone rendering, lifecycle correctness, or performance.
