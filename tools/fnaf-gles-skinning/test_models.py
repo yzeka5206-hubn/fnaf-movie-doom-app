@@ -105,7 +105,12 @@ class Runner:
         i=np.arange(n);xy=np.column_stack(((i%64+0.5)/64*2-1,(i//64+0.5)/64*2-1)).astype(np.float32)
         buffers=[g.buffer(0,np.ascontiguousarray(coords,np.float32),3,0x1406),g.buffer(7,np.ascontiguousarray(weights,np.uint8),4,0x1401,True),
                  g.buffer(8,np.ascontiguousarray(inds,np.uint8),4,0x1401),g.buffer(9,xy,2,0x1406)]
-        if normals is not None:buffers.append(g.buffer(4,np.ascontiguousarray(normals,np.float32),3,0x1406))
+        if normals is not None:
+            # Match FModelVertex::SetNormal and the renderer's signed
+            # GL_INT_2_10_10_10_REV normalized attribute, rather than GL_FLOAT.
+            q=np.clip(np.trunc(normals*512),-512,511).astype(np.int32)
+            packed=((q[:,0]&1023)|((q[:,1]&1023)<<10)|((q[:,2]&1023)<<20)).astype(np.uint32)
+            buffers.append(g.buffer(4,np.ascontiguousarray(packed),4,0x8D9F,True))
         else:g.glDisableVertexAttribArray(4);g.glVertexAttrib3f(4,0,0,1)
         g.glClearColor(0,0,0,0);g.glClear(0x4000);g.glDrawArrays(0,0,n);g.glFinish();g.check('rendering skinned vertices')
         pixels=np.empty((64,64,4),np.float32);g.glReadPixels(0,0,64,64,0x1908,0x1406,gpu.ptr(pixels));g.check('reading skinned vertices')
@@ -167,11 +172,13 @@ def test_one(z,name,runner,exhaustive=False):
             raise AssertionError(f'{name} frame {f}, vertex {selected[i]}: GPU {actual[i]} != CPU {expected[i]}, diff {delta}')
         # Weighted directions must be unaffected by translations.
         w=weights.astype(np.float64); sums=w.sum(axis=1); w/=np.where(sums>0,sums,1)[:,None]
+        q=np.clip(np.trunc(normals*512),-512,511)
+        unpacked=np.maximum(q.astype(np.float64)/511,-1.0)
         expectednormal=np.zeros((len(coords),3),dtype=np.float64)
         for k in range(4):
             safe=np.where(w[:,k]>0,indices[:,k],0)
-            expectednormal+=np.einsum('nij,nj->ni',transforms[safe,:3,:3],normals)*w[:,k,None]
-        expectednormal[sums==0]=normals[sums==0]
+            expectednormal+=np.einsum('nij,nj->ni',transforms[safe,:3,:3],unpacked)*w[:,k,None]
+        expectednormal[sums==0]=unpacked[sums==0]
         expectednormal[np.einsum('ni,ni->n',expectednormal,expectednormal)<1e-20]=(0,0,1)
         actualnormal=runner.draw(coords,indices,weights,transforms,normals=normals)
         ndelta=float(np.max(np.abs(actualnormal-expectednormal)));worstnormal=max(worstnormal,ndelta)
