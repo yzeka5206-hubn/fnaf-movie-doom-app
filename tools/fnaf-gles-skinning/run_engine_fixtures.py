@@ -20,6 +20,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 from compare_fixture_frames import compare, masks
+from verify_fixture_pose import compare_pose
 
 
 def stop(proc):
@@ -97,6 +98,7 @@ def main():
     parser.add_argument('output', type=lambda p: Path(p).resolve())
     parser.add_argument('groups', nargs='+')
     parser.add_argument('--timeout', type=int, default=90)
+    parser.add_argument('--game', type=lambda p: Path(p).resolve(), help='original game PK3 for independent CPU-pose comparison')
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
     all_results = {}
@@ -104,17 +106,22 @@ def main():
         try:
             frames = [capture(args.engine, args.iwad, args.fixtures / f'{group}-{frame}',
                               args.output, group, frame, args.timeout) for frame in (0, 15)]
-            result = compare(*frames)
+            result = {'motion': compare(*frames)}
+            if args.game:
+                result['cpu_frame_0'] = compare_pose(args.game, group, 0, frames[0])
+                result['cpu_frame_15'] = compare_pose(args.game, group, 15, frames[1])
             all_results[group] = result
-            good = all(info['pass'] for info in result.values())
+            good = all(info['pass'] for section in result.values() for info in section.values())
             print(f'{group}: {"PASS" if good else "FAIL"} {json.dumps(result)}', flush=True)
         except Exception as exc:
             all_results[group] = {'error': str(exc)}
             print(f'{group}: ERROR {exc}', flush=True)
         (args.output / 'summary.json').write_text(json.dumps(all_results, indent=2))
-    if any('error' in v or not all(i['pass'] for i in v.values()) for v in all_results.values()):
+    if any('error' in v or not all(i['pass'] for section in v.values() for i in section.values())
+           for v in all_results.values()):
         raise SystemExit('One or more fixture comparisons failed')
-    print('PASS: all selected three-actor fixtures changed between two fixed Walk poses')
+    print('PASS: selected three-actor fixtures changed between fixed Walk poses' +
+          (' and matched CPU poses' if args.game else ''))
 
 
 if __name__ == '__main__':
