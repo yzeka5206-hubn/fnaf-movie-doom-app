@@ -15,6 +15,11 @@ public class Test {
  }
  public static void main(String[] args)throws Exception {
   byte[] a="abcdefghij".getBytes("UTF-8"),b="aXYdefZWij++++".getBytes("UTF-8"),p=patch(a,b,false,false);
+  PatchEngine.SourceSignature sig = PatchEngine.identify(new ByteArrayInputStream(a));
+  if(!PatchEngine.matchesSource(new ByteArrayInputStream(p),sig))throw new Exception("valid source not selected");
+  PatchEngine.SourceSignature other = PatchEngine.identify(new ByteArrayInputStream(b));
+  if(PatchEngine.matchesSource(new ByteArrayInputStream(p),other))throw new Exception("wrong source selected");
+  System.out.println("PASS source selected by exact length and SHA before output");
   ByteArrayOutputStream out=new ByteArrayOutputStream();PatchEngine.apply(new ByteArrayInputStream(a),new ByteArrayInputStream(p),out);if(!Arrays.equals(out.toByteArray(),b))throw new Exception("unequal output");System.out.println("PASS shifted, unequal size copy/literal delta");
   byte[] bad=a.clone();bad[4]^=1;rejects(bad,p,"wrong source");rejects(a,patch(a,b,true,false),"wrong target SHA");rejects(a,patch(a,b,false,true),"backward copy");rejects(Arrays.copyOf(a,9),p,"truncated source");rejects(a,Arrays.copyOf(p,p.length-1),"truncated patch");rejects(a,Arrays.copyOf(p,p.length+1),"trailing patch data");
   if(args.length==3){try(InputStream src=new FileInputStream(args[0]);InputStream pd=new FileInputStream(args[1]);OutputStream dst=new FileOutputStream(args[2])){PatchEngine.apply(src,pd,dst);}System.out.println("PASS actual APK delta");}

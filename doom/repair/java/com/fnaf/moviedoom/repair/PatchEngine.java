@@ -14,6 +14,41 @@ final class PatchEngine {
     private static final long MAX_FILE_SIZE = 2L * 1024 * 1024 * 1024;
     private PatchEngine() { }
 
+    static final class SourceSignature {
+        final long size;
+        final byte[] hash;
+        SourceSignature(long size, byte[] hash) { this.size = size; this.hash = hash; }
+    }
+
+    /** Identify the installed APK before creating output; the source is read again when applying. */
+    static SourceSignature identify(InputStream original) throws IOException {
+        MessageDigest hash = digest();
+        byte[] buf = new byte[64 * 1024];
+        long size = 0;
+        for (;;) {
+            int n = original.read(buf);
+            if (n < 0) break;
+            if (n == 0) continue;
+            size += n;
+            if (size > MAX_FILE_SIZE) throw new IOException("Eski APK çok büyük.");
+            hash.update(buf, 0, n);
+        }
+        if (size == 0) throw new IOException("Eski APK boş.");
+        return new SourceSignature(size, hash.digest());
+    }
+
+    /** Compare a source signature to a PCH2 header without trusting a filename. */
+    static boolean matchesSource(InputStream patch, SourceSignature source) throws IOException {
+        DataInputStream in = new DataInputStream(patch);
+        byte[] magic = new byte[8]; in.readFully(magic);
+        if (!Arrays.equals(magic, MAGIC)) throw new IOException("Onarım verisi tanınmıyor.");
+        long oldSize = in.readLong(), newSize = in.readLong();
+        byte[] expectedOld = new byte[32]; in.readFully(expectedOld);
+        if (oldSize <= 0 || oldSize > MAX_FILE_SIZE || newSize <= 0 || newSize > MAX_FILE_SIZE)
+            throw new IOException("Onarım verisi geçersiz.");
+        return oldSize == source.size && MessageDigest.isEqual(expectedOld, source.hash);
+    }
+
     static void apply(InputStream original, InputStream patch, OutputStream target) throws IOException {
         DataInputStream in = new DataInputStream(patch);
         byte[] magic = new byte[8]; in.readFully(magic);

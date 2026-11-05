@@ -1,13 +1,13 @@
 plugins { alias(libs.plugins.android.application) }
 
-// One-time small offline updater for the settings and model test.
+// One-time small offline updater for the pause menu and partial animation test.
 // This branch does not build or alter the game itself.
 android {
     enableKotlin = false // This small helper contains Java only.
     namespace = "com.fnaf.moviedoom.repair"
     compileSdk = 36
     defaultConfig {
-        applicationId = "com.fnaf.moviedoom.modelpatch"
+        applicationId = "com.fnaf.moviedoom.pausepatch"
         minSdk = 33
         targetSdk = 36
         versionCode = 1
@@ -30,7 +30,7 @@ tasks.matching { it.name == "assembleDebug" }.configureEach {
     doLast {
         val dir = layout.buildDirectory.dir("outputs/apk/debug").get().asFile
         val old = dir.resolve("doom-debug.apk")
-        val named = dir.resolve("FNAF-Ayar-Model-Guncelleyici.apk")
+        val named = dir.resolve("FNAF-Menu-Animasyon-Guncelleyici.apk")
         check(old.isFile && old.renameTo(named)) { "Could not name the repair APK" }
     }
 }

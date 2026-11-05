@@ -45,11 +45,11 @@ public class MainActivity extends Activity {
         LinearLayout body = new LinearLayout(this); body.setOrientation(LinearLayout.VERTICAL);
         body.setPadding(pad, dp(32), pad, dp(32)); body.setBackgroundColor(Color.rgb(20, 23, 29));
         scroller.addView(body);
-        TextView title = text("FNAF AYAR VE MODEL GÜNCELLEMESİ", 25, true);
+        TextView title = text("FNAF MENÜ VE ANİMASYON GÜNCELLEMESİ", 25, true);
         body.addView(title);
-        TextView desc = text("Yeni ayar ve model testini telefonda yüklü son FNAF Menü Testi'nden hazırlar. " +
-                "Büyük oyun dosyasını yeniden indirmez; internet kullanmaz. Yaklaşık 400 MB boş alan gerekir.\n\n" +
-                "Ayrı v7 oyununa dokunmaz. Kurulu test hazırlama sırasında silinmez.", 16, false);
+        TextView desc = text("Yeni duraklatma menüsü ve kısmi animasyon testini telefonda yüklü FNAF Menü Testi'nden hazırlar. " +
+                "Büyük oyun dosyasını yeniden indirmez; internet kullanmaz. Telefonda en az 1 GB boş alan önerilir.\n\n" +
+                "Son iki Menü Testi sürümünü otomatik tanır. Ayrı v7 oyununa dokunmaz; kurulu test hazırlama sırasında silinmez.", 16, false);
         desc.setPadding(0, dp(16), 0, dp(18)); body.addView(desc);
         prepare = new Button(this); prepare.setText("YENİ APK'YI HAZIRLA");
         body.addView(prepare, new LinearLayout.LayoutParams(-1, -2));
@@ -113,14 +113,26 @@ public class MainActivity extends Activity {
             Uri outputUri = null;
             ContentResolver cr = getContentResolver();
             try {
+                // Support the last two published menu tests without asking the
+                // player which one is installed. The source hash also prevents
+                // producing a large invalid output from an unrelated APK.
+                PatchEngine.SourceSignature signature;
+                try (InputStream original = source.open()) { signature = PatchEngine.identify(original); }
+                String selectedPatch = null;
+                for (String candidate : new String[]{"repair-current.dat", "repair-previous.dat"}) {
+                    try (InputStream header = getAssets().open(candidate)) {
+                        if (PatchEngine.matchesSource(header, signature)) { selectedPatch = candidate; break; }
+                    }
+                }
+                if (selectedPatch == null) throw new IOException("Kurulu APK desteklenen son iki Menü Testi sürümünden değil.");
                 ContentValues meta = new ContentValues();
-                meta.put(MediaStore.Downloads.DISPLAY_NAME, "FNAF_Ayar_Model_Test.apk");
+                meta.put(MediaStore.Downloads.DISPLAY_NAME, "FNAF_Menu_Animasyon_Test.apk");
                 meta.put(MediaStore.Downloads.MIME_TYPE, "application/vnd.android.package-archive");
                 meta.put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS);
                 meta.put(MediaStore.Downloads.IS_PENDING, 1);
                 outputUri = cr.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, meta);
                 if (outputUri == null) throw new IOException("İndirilenler klasörüne dosya oluşturulamadı.");
-                try (InputStream original = source.open(); InputStream patch = getAssets().open("repair.dat");
+                try (InputStream original = source.open(); InputStream patch = getAssets().open(selectedPatch);
                      OutputStream target = cr.openOutputStream(outputUri, "w")) {
                     if (target == null) throw new IOException("Yeni APK yazılamadı.");
                     PatchEngine.apply(original, patch, target);
@@ -143,7 +155,7 @@ public class MainActivity extends Activity {
         try (Cursor c = cr.query(uri, new String[]{OpenableColumns.DISPLAY_NAME}, null, null, null)) {
             if (c != null && c.moveToFirst()) { String n = c.getString(0); if (n != null && !n.isEmpty()) return n; }
         } catch (Exception ignored) { }
-        return "FNAF_Ayar_Model_Test.apk";
+        return "FNAF_Menu_Animasyon_Test.apk";
     }
     private static String safeMessage(Throwable t) {
         String s = t.getMessage();
