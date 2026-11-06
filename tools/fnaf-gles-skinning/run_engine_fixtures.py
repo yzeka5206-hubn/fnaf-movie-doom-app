@@ -67,7 +67,7 @@ def capture(engine, iwad, fixture, output, group, frame, timeout):
                 if proc.poll() is not None:
                     raise RuntimeError(f'engine exited with {proc.returncode}: {stdout.read_text(errors="replace")[-3000:]}')
                 text = log.read_text(errors='replace') if log.exists() else ''
-                if any(s in text for s in ('VM execution aborted', 'Could not find animation', 'Script error', 'Fatal error')):
+                if any(s.lower() in text.lower() for s in ('VM execution aborted', 'Could not find animation', 'Script error', 'Fatal error', 'has not been exported from the executable')):
                     raise RuntimeError(f'engine reported a fixture error: {text[-2000:]}')
                 if 'MAP01 -' in text:
                     if 'FNAF skeletal GLES palette: enabled' not in text or 'OpenGL ES 3.' not in text:
@@ -81,7 +81,9 @@ def capture(engine, iwad, fixture, output, group, frame, timeout):
                         if run.returncode == 0 and screenshot.exists():
                             im = Image.open(screenshot)
                             actor_areas = [int(m.sum()) for m in masks(screenshot).values()]
-                            if im.size == (640, 480) and max(actor_areas) >= 30:
+                            # MAP01 can be logged while the startup splash is still
+                            # on screen; its cyan progress bar alone is not an actor.
+                            if im.size == (640, 480) and min(actor_areas) >= 20:
                                 return screenshot
                             last_message = f'window {im.size}, actor pixels {actor_areas}'
                 time.sleep(.5)  # allow the renderer to produce its first frame
@@ -98,6 +100,7 @@ def main():
     parser.add_argument('output', type=lambda p: Path(p).resolve())
     parser.add_argument('groups', nargs='+')
     parser.add_argument('--timeout', type=int, default=90)
+    parser.add_argument('--zoom-arm', action='store_true', help='fixtures were created with --zoom-arm')
     parser.add_argument('--game', type=lambda p: Path(p).resolve(), help='original game PK3 for independent CPU-pose comparison')
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
@@ -108,8 +111,8 @@ def main():
                               args.output, group, frame, args.timeout) for frame in (0, 15)]
             result = {'motion': compare(*frames)}
             if args.game:
-                result['cpu_frame_0'] = compare_pose(args.game, group, 0, frames[0])
-                result['cpu_frame_15'] = compare_pose(args.game, group, 15, frames[1])
+                result['cpu_frame_0'] = compare_pose(args.game, group, 0, frames[0], zoom_arm=args.zoom_arm)
+                result['cpu_frame_15'] = compare_pose(args.game, group, 15, frames[1], zoom_arm=args.zoom_arm)
             all_results[group] = result
             good = all(info['pass'] for section in result.values() for info in section.values())
             print(f'{group}: {"PASS" if good else "FAIL"} {json.dumps(result)}', flush=True)

@@ -16,7 +16,7 @@ import cv2
 import numpy as np
 
 from compare_fixture_frames import masks
-from make_engine_fixture import GROUPS
+from make_engine_fixture import GROUPS, ARM_ZOOM_HEIGHT, fixture_models
 from test_models import animations, arrays, binding, header, palette
 
 
@@ -29,7 +29,7 @@ PIXEL_STRETCH = 1.2
 FOCAL_LENGTH = 320  # 640-pixel width at a 90 degree field of view
 
 
-def projected_mask(model_bytes, actor_index, scale, frame, bind_pose=False):
+def projected_mask(model_bytes, actor_index, scale, frame, bind_pose=False, actor_height=ACTOR_HEIGHT):
     h = header(model_bytes)
     a = arrays(model_bytes, h)
     vertices = np.asarray(a[0], dtype=np.float64)
@@ -58,7 +58,7 @@ def projected_mask(model_bytes, actor_index, scale, frame, bind_pose=False):
     if np.any(depth <= 0):
         raise ValueError('fixture geometry crosses the camera plane')
     sx = 320 - (ACTOR_Y[actor_index] - x * scale) * FOCAL_LENGTH / depth
-    sy = 240 - (vertical * scale + (ACTOR_HEIGHT - CAMERA_EYE_HEIGHT) * PIXEL_STRETCH) * FOCAL_LENGTH / depth
+    sy = 240 - (vertical * scale + (actor_height - CAMERA_EYE_HEIGHT) * PIXEL_STRETCH) * FOCAL_LENGTH / depth
     projected = np.rint(np.stack((sx, sy), axis=1) - 0.5).astype(np.int32)
     indices = np.frombuffer(model_bytes, dtype='<u4', count=h['num_triangles'] * 3,
                             offset=h['ofs_triangles']).reshape((-1, 3))
@@ -69,14 +69,15 @@ def projected_mask(model_bytes, actor_index, scale, frame, bind_pose=False):
     return mask.astype(bool)
 
 
-def compare_pose(game, group, frame, screenshot, bind_pose=False, threshold=0.55):
+def compare_pose(game, group, frame, screenshot, bind_pose=False, threshold=0.55, zoom_arm=False):
     actual = list(masks(screenshot).values())
     if actual[0].shape != (480, 640):
         raise ValueError('expected a 640x480 fixture screenshot')
     output = {}
     with ZipFile(game) as archive:
-        for i, (model, _clip, scale) in enumerate(GROUPS[group]):
-            predicted = projected_mask(archive.read(model), i, scale, frame, bind_pose)
+        for i, (model, _clip, scale) in enumerate(fixture_models(group, zoom_arm)):
+            height = ARM_ZOOM_HEIGHT if zoom_arm and i == 2 else ACTOR_HEIGHT
+            predicted = projected_mask(archive.read(model), i, scale, frame, bind_pose, actor_height=height)
             target = actual[i]
             intersection = int(np.logical_and(predicted, target).sum())
             union = int(np.logical_or(predicted, target).sum())
@@ -96,9 +97,10 @@ def main():
     parser.add_argument('frame', type=int)
     parser.add_argument('screenshot', type=Path)
     parser.add_argument('--bind-pose', action='store_true', help='calibrate against the unpatched ES T-pose')
+    parser.add_argument('--zoom-arm', action='store_true', help='fixture used the diagnostic --zoom-arm layout')
     parser.add_argument('--threshold', type=float, default=0.55)
     args = parser.parse_args()
-    result = compare_pose(args.game, args.group, args.frame, args.screenshot, args.bind_pose, args.threshold)
+    result = compare_pose(args.game, args.group, args.frame, args.screenshot, args.bind_pose, args.threshold, args.zoom_arm)
     print(json.dumps(result, indent=2))
     if not all(v['pass'] for v in result.values()):
         raise SystemExit('FAIL: at least one actor silhouette disagrees with its CPU IQM pose')

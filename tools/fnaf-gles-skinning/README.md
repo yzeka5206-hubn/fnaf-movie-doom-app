@@ -56,9 +56,29 @@ its zero weights suppress animation. The MD3 addon stays loaded unchanged.
   silhouettes change; `verify_fixture_pose.py` independently projects every
   IQM vertex at the named frame and compares the resulting silhouettes. The
   reference unpatched GLES renderer correctly fails the animated-pose check.
-  Fixtures are diagnostic only, stay local, and are neither the game nor an
-  Android test. Their dummy `FrameIndex` seeds the reference engine's sprite
-  hash: a `BaseFrame`-only isolated room can divide by zero during startup.
+  Nick and Alan's first-person arms are extremely small in the default view:
+  their Walk frames differ by just four screen pixels. For a less ambiguous
+  test, generate **both** fixed poses with `--solid-skin --zoom-arm` and pass
+  `--zoom-arm` to `verify_fixture_pose.py` or `run_engine_fixtures.py` as well.
+  This magnifies/raises only the third test actor; the independent reference
+  applies the same diagnostic geometry and does not alter any game asset.
+  The runner requires all three colors, avoiding a false capture of the cyan
+  progress bar shown during startup. Fixtures are diagnostic only, stay local,
+  and are neither the game nor an Android test. Their dummy `FrameIndex` seeds
+  the reference engine's sprite hash: a `BaseFrame`-only isolated room can
+  divide by zero during startup.
+
+## Desktop renderer integration results
+
+A patched desktop GLES 3.2 llvmpipe engine rendered two fixed Walk poses for
+all eight selectable player groups (world, first-person legs and arms) and the
+five main animatronic groups. Each of the three independently colored actors
+changed on screen and matched independently CPU-projected IQM silhouettes
+(IoU >= 0.55). The magnified first-person arm test was used for Nick and Alan.
+This tests a pair of **fixed** Walk poses through the actual engine renderer;
+it is not a live-game, every-animation, APK or Xiaomi result. A desktop-only
+compatibility build was required for the Android fork's resources and ES3
+context; those compatibility edits were not shipped in the Android binary.
 
 The mathematical tests sample vertices and frames; they are not proof of
 whole-game behavior, phone rendering, lifecycle correctness, or performance.

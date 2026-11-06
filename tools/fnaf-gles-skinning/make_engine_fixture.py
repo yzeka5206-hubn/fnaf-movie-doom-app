@@ -29,7 +29,21 @@ def wad(lumps):
     return struct.pack('<4sII',b'PWAD',len(lumps),offset)+data+b''.join(entries)
 
 
-def map_data():
+# The first-person arms can be very small in a full-body fixture. A separate
+# diagnostic zoom gives their pose enough pixels to test without changing the
+# game itself. Both generator and CPU reference use these exact settings.
+ARM_ZOOM_SCALE = 4.0
+ARM_ZOOM_HEIGHT = 160
+
+
+def fixture_models(group, zoom_arm=False):
+    if zoom_arm and group not in PLAYER_NAMES:
+        raise ValueError('--zoom-arm is only available for player fixtures')
+    return [(model, clip, scale * (ARM_ZOOM_SCALE if zoom_arm and i == 2 else 1.0))
+            for i, (model, clip, scale) in enumerate(GROUPS[group])]
+
+
+def map_data(zoom_arm=False):
     text='namespace = "ZDoom";\n'
     for x,y in [(-512,-512),(-512,512),(512,512),(512,-512)]:text+=f'vertex {{ x={x}; y={y}; }}\n'
     for v in range(4):
@@ -40,7 +54,8 @@ def map_data():
     # Raise the actors above the floor, including arms whose Walk pose is
     # below their local origin. Back the camera up to fit tall animatronics.
     for i,y in enumerate((-125,0,125)):
-        text+=f'thing {{ x=70; y={y}; height=64; type={30000+i}; angle=180; skill1=true; skill2=true; skill3=true; skill4=true; skill5=true; single=true; }}\n'
+        height = ARM_ZOOM_HEIGHT if zoom_arm and i == 2 else 64
+        text+=f'thing {{ x=70; y={y}; height={height}; type={30000+i}; angle=180; skill1=true; skill2=true; skill3=true; skill4=true; skill5=true; single=true; }}\n'
     return wad([('MAP01',b''),('TEXTMAP',text),('ENDMAP',b'')])
 
 
@@ -50,20 +65,22 @@ def main():
     parser.add_argument('group', choices=sorted(GROUPS))
     parser.add_argument('out', type=Path)
     parser.add_argument('frame', type=int, nargs='?', help='optional fixed Walk frame')
-    parser.add_argument('--solid-skin', action='store_true', help='diagnostic cyan skin to expose every mesh')
+    parser.add_argument('--solid-skin', action='store_true', help='diagnostic colored skins to expose each mesh')
+    parser.add_argument('--zoom-arm', action='store_true', help='magnify and raise the third (first-person arm) player model for diagnostic comparisons')
     args=parser.parse_args()
     game,group,out,frame=args.game,args.group,args.out,args.frame
+    models=fixture_models(group,args.zoom_arm)
     out.mkdir(parents=True,exist_ok=True)
     if frame is not None and frame < 0: raise ValueError('frame must be nonnegative')
     # Optional frozen poses permit deterministic framebuffer comparisons against
     # a full desktop GL reference; the default is still a real looping animation.
     animation_options = ('framerate: 0, startFrame: '+str(frame)+', flags: SAF_LOOP|SAF_INSTANT'
                          if frame is not None else 'framerate: 24, flags: SAF_LOOP|SAF_INSTANT')
-    (out/'fixture.wad').write_bytes(map_data())
+    (out/'fixture.wad').write_bytes(map_data(args.zoom_arm))
     png=BytesIO();Image.new('RGBA',(16,16),(128,0,200,255)).save(png,format='PNG')
     classes='version "4.12.0"\n';modeldefs='';ednums='DoomEdNums\n{\n';members=set();solid_assets={}
     with ZipFile(game) as src, ZipFile(out/'fixture.pk3','w',ZIP_DEFLATED,compresslevel=6) as dst:
-        for i,(model,clip,scale) in enumerate(GROUPS[group]):
+        for i,(model,clip,scale) in enumerate(models):
             # Fail early rather than accepting a test room whose named pose is
             # absent (the engine otherwise prints a warning and shows no motion).
             model_bytes=src.read(model)
