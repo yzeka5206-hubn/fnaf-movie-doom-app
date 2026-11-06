@@ -1,4 +1,4 @@
-name: Build and test offline animation updater
+name: Build and test offline optimization updater
 
 on:
   workflow_dispatch:
@@ -37,11 +37,9 @@ jobs:
           from pathlib import Path
           import hashlib,struct
           root=Path('doom/repair/assets')
-          target='6872aa42e59cfd66bfceae35cd1c289382f533dd2b91d57ce0d8bf91e7a256a4'
+          target='5047ab19722faa809649251d5eb3e3b0f7705294db4e9d535f8cc28180ff9e7c'
           variants={
-            'repair-current.dat':('f7504084a9d64adb89a9058cdb28a896b1452e8a0fc7188a7684d5d82b8cc74e','e65442609a97f027b721a6d4e6bdee6ff91814ef75c4b821abc7d4c632c6c693'),
-            'repair-previous.dat':('2b026cbc834b15071231eaf63cbd3b2fab8f0317ae161e979033df3fa067ebef','83a53320099a5aae126d3b9fe22f02eb20bec3e4f018b7ff919706342c0c1b6c'),
-            'repair-older.dat':('e279e8a9e90240e71f2c8049b4b35ecfbf083d510404ad79111ec00d593631fb','699d07a855e97901241ca0fbc48747dcbf313922b80ddb232377c6e59ad5fc73'),
+            'repair-optimized.dat':('6872aa42e59cfd66bfceae35cd1c289382f533dd2b91d57ce0d8bf91e7a256a4','91ce6be4bb67e90425899c7db3e874e498cfcad88032e0e931621028598875ed'),
           }
           for name,(source,patch_sha) in variants.items():
               data=(root/name).read_bytes()
@@ -60,23 +58,23 @@ jobs:
       - name: Verify updater package, permissions, and signature
         run: |
           set -euo pipefail
-          APK=doom/build/outputs/apk/debug/FNAF-Animasyon-Guncelleyici.apk
+          APK=doom/build/outputs/apk/debug/FNAF-Optimize-Guncelleyici.apk
           test -s "$APK"
           sha256sum "$APK"
           "$ANDROID_SDK_ROOT/build-tools/36.0.0/apksigner" verify --verbose "$APK"
-          "$ANDROID_SDK_ROOT/build-tools/36.0.0/aapt" dump badging "$APK" | grep '^package: name=' | grep "com.fnaf.moviedoom.animationupdater"
+          "$ANDROID_SDK_ROOT/build-tools/36.0.0/aapt" dump badging "$APK" | grep '^package: name=' | grep "com.fnaf.moviedoom.optimizeupdater"
           if "$ANDROID_SDK_ROOT/build-tools/36.0.0/aapt" dump permissions "$APK" | grep -q 'android.permission.INTERNET'; then
             echo 'Unexpected network permission'; exit 1
           fi
           echo 'PASS unique updater package and no INTERNET permission'
 
       - name: Android 14 real-APK preparation and side-by-side installation
-        run: bash scripts/android14-animation-updater-ci.sh "$PWD/doom/build/outputs/apk/debug/FNAF-Animasyon-Guncelleyici.apk"
+        run: bash scripts/android14-animation-updater-ci.sh "$PWD/doom/build/outputs/apk/debug/FNAF-Optimize-Guncelleyici.apk"
 
       - name: Upload verified updater APK
         uses: actions/upload-artifact@v4
         with:
-          name: FNAF-Animasyon-Guncelleyici
-          path: doom/build/outputs/apk/debug/FNAF-Animasyon-Guncelleyici.apk
+          name: FNAF-Optimize-Guncelleyici
+          path: doom/build/outputs/apk/debug/FNAF-Optimize-Guncelleyici.apk
           if-no-files-found: error
           retention-days: 14

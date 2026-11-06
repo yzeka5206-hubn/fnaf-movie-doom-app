@@ -1,35 +1,27 @@
-# Offline updater for the skeletal-animation test
+# Offline updater for the optimized test
 
-This Java-only app reconstructs the **separate** FNAF Animasyon Testi APK from
-one of three known installed FNAF Menü Testi versions, without network access.
-It selects a PCH2 patch using the entire source APK's size and SHA-256 *before*
-creating any output. It then reads that source again while reconstructing the
-entire destination, and verifies both source and target SHA-256. A mismatch is
-rejected and any pending output is deleted.
+This Java-only app reconstructs the **separate** optimized FNAF APK from the
+phone-confirmed Animation Test without network access. It selects the patch by
+entire source APK size and SHA-256 before creating any output. A mismatch is
+rejected; source and reconstructed target hashes are verified before the APK
+appears in Downloads.
 
-Supported source APKs:
-
-* run 42111014994: `f7504084a9d64adb89a9058cdb28a896b1452e8a0fc7188a7684d5d82b8cc74e`
-* run 42098677307: `2b026cbc834b15071231eaf63cbd3b2fab8f0317ae161e979033df3fa067ebef`
-* run 42086796345: `e279e8a9e90240e71f2c8049b4b35ecfbf083d510404ad79111ec00d593631fb`
-
-Target: run 42140465933, commit 2529684, SHA-256
-`6872aa42e59cfd66bfceae35cd1c289382f533dd2b91d57ce0d8bf91e7a256a4`,
-package `com.fnaf.moviedoom.animationtest`.
-
-Built-in PCH2 patch SHA-256:
-
-* `repair-current.dat`: `e65442609a97f027b721a6d4e6bdee6ff91814ef75c4b821abc7d4c632c6c693`
-* `repair-previous.dat`: `83a53320099a5aae126d3b9fe22f02eb20bec3e4f018b7ff919706342c0c1b6c`
-* `repair-older.dat`: `699d07a855e97901241ca0fbc48747dcbf313922b80ddb232377c6e59ad5fc73`
+* Source: run 42140465933, SHA-256
+  `6872aa42e59cfd66bfceae35cd1c289382f533dd2b91d57ce0d8bf91e7a256a4`,
+  package `com.fnaf.moviedoom.animationtest`.
+* Target: run 42152144244, commit `67280a3`, SHA-256
+  `5047ab19722faa809649251d5eb3e3b0f7705294db4e9d535f8cc28180ff9e7c`,
+  package `com.fnaf.moviedoom.optimized`.
+* Patch: `repair-optimized.dat` (8,478,540 bytes), SHA-256
+  `91ce6be4bb67e90425899c7db3e874e498cfcad88032e0e931621028598875ed`.
 
 The refined build-time generator uses bsdiff only to find byte-identical,
-forward-only runs; the on-device reader remains the same simple PCH2 engine.
-All three patches were replayed against the real APKs and compared byte for
-byte with the target. The output is published to Downloads only after SHA
-verification. No installed application is deleted or modified. The target is a
-different package and installs alongside the old app, so **do not uninstall the
-old game**; its files and saves remain there. The new test starts with its own
-data and does not automatically inherit saves. The updater itself has its own
-package name, distinct from earlier updater apps, and can be removed after use.
-No Android phone rendering or input success is claimed by this updater.
+forward-only runs; the device's PCH2 reader needs no network or bsdiff runtime.
+The patch was replayed with the Java reader against the actual APKs and the
+output compared byte-for-byte to the original signed target. On-device helper,
+whole-game scenes, performance, and phone data transfer require separate tests.
+
+No application is uninstalled and no old private data is modified. The target
+is a different package: **do not uninstall the old game**. The new app has its
+own data and does not automatically inherit saves or progress. The updater can
+be removed after use. No Android device FPS or rendering claim is made here.

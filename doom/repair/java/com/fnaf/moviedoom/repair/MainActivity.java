@@ -29,7 +29,7 @@ import java.io.OutputStream;
 
 /** Offline-only one-time updater; leaves the original game and installed apps untouched. */
 public class MainActivity extends Activity {
-    private static final String OLD_PACKAGE = "com.fnaf.moviedoom.menutest";
+    private static final String OLD_PACKAGE = "com.fnaf.moviedoom.animationtest";
     private static final int PICK_APK = 7;
     private TextView status;
     private Button prepare, select;
@@ -45,11 +45,11 @@ public class MainActivity extends Activity {
         LinearLayout body = new LinearLayout(this); body.setOrientation(LinearLayout.VERTICAL);
         body.setPadding(pad, dp(32), pad, dp(32)); body.setBackgroundColor(Color.rgb(20, 23, 29));
         scroller.addView(body);
-        TextView title = text("FNAF ANİMASYON GÜNCELLEMESİ", 25, true);
+        TextView title = text("FNAF OPTİMİZE GÜNCELLEMESİ", 25, true);
         body.addView(title);
-        TextView desc = text("Yeni animasyon testini telefonda yüklü FNAF Menü Testi'nden hazırlar. " +
+        TextView desc = text("Yeni optimize testi telefonda yüklü FNAF Animasyon Testi'nden hazırlar. " +
                 "Büyük oyun dosyasını yeniden indirmez; internet kullanmaz. Telefonda en az 1 GB boş alan önerilir.\n\n" +
-                "Desteklenen üç Menü Testi sürümünü otomatik tanır. Eski oyuna ve kayıtlarına dokunmaz; yeni test ayrı kurulacaktır.", 16, false);
+                "Çalışan animasyon testi sürümünü otomatik tanır. Eski oyuna ve kayıtlarına dokunmaz; yeni test ayrı kurulacaktır.", 16, false);
         desc.setPadding(0, dp(16), 0, dp(18)); body.addView(desc);
         prepare = new Button(this); prepare.setText("YENİ APK'YI HAZIRLA");
         body.addView(prepare, new LinearLayout.LayoutParams(-1, -2));
@@ -82,7 +82,7 @@ public class MainActivity extends Activity {
             }
             runPatch(() -> new FileInputStream(apk));
         } catch (PackageManager.NameNotFoundException | SecurityException e) {
-            status.setText("FNAF Menü Testi bulunamadı veya okunamıyor. Alttaki düğmeden önceki doom-debug.apk dosyasını seç.");
+            status.setText("FNAF Animasyon Testi bulunamadı veya okunamıyor. Alttaki düğmeden önceki doom-debug.apk dosyasını seç.");
         }
     }
     private void pickApk() {
@@ -113,19 +113,19 @@ public class MainActivity extends Activity {
             Uri outputUri = null;
             ContentResolver cr = getContentResolver();
             try {
-                // Select a supported installed menu test by its complete SHA.
+                // Select a supported installed animation test by its complete SHA.
                 // A different APK is rejected before any output is created.
                 PatchEngine.SourceSignature signature;
                 try (InputStream original = source.open()) { signature = PatchEngine.identify(original); }
                 String selectedPatch = null;
-                for (String candidate : new String[]{"repair-current.dat", "repair-previous.dat", "repair-older.dat"}) {
+                for (String candidate : new String[]{"repair-optimized.dat"}) {
                     try (InputStream header = getAssets().open(candidate)) {
                         if (PatchEngine.matchesSource(header, signature)) { selectedPatch = candidate; break; }
                     }
                 }
-                if (selectedPatch == null) throw new IOException("Bu APK desteklenen üç Menü Testi sürümünden değil.");
+                if (selectedPatch == null) throw new IOException("Bu APK desteklenen Animasyon Testi sürümü değil.");
                 ContentValues meta = new ContentValues();
-                meta.put(MediaStore.Downloads.DISPLAY_NAME, "FNAF_Animasyon_Test.apk");
+                meta.put(MediaStore.Downloads.DISPLAY_NAME, "FNAF_Optimize_Test.apk");
                 meta.put(MediaStore.Downloads.MIME_TYPE, "application/vnd.android.package-archive");
                 meta.put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS);
                 meta.put(MediaStore.Downloads.IS_PENDING, 1);
@@ -139,7 +139,7 @@ public class MainActivity extends Activity {
                 ContentValues complete = new ContentValues(); complete.put(MediaStore.Downloads.IS_PENDING, 0);
                 if (cr.update(outputUri, complete, null, null) != 1) throw new IOException("Yeni APK tamamlanamadı.");
                 String fileName = displayName(cr, outputUri);
-                runOnUiThread(() -> finishWork("Hazır ve doğrulandı!\n\n1. Eski oyunu SİLME. Yeni animasyon testi ayrı bir uygulama olarak kurulacak.\n\n2. Dosyalar → İndirilenler → " + fileName + " dosyasını aç ve yükle.\n\nYeni test eski oyunun kayıtlarını otomatik devralmaz. İstersen işlemden sonra bu güncelleyiciyi kaldırabilirsin."));
+                runOnUiThread(() -> finishWork("Hazır ve doğrulandı!\n\n1. Eski oyunu SİLME. Yeni optimize testi ayrı bir uygulama olarak kurulacak.\n\n2. Dosyalar → İndirilenler → " + fileName + " dosyasını aç ve yükle.\n\nYeni test eski oyunun kayıtlarını otomatik devralmaz. İstersen işlemden sonra bu güncelleyiciyi kaldırabilirsin."));
             } catch (Exception e) {
                 if (outputUri != null) try { cr.delete(outputUri, null, null); } catch (Exception ignored) { }
                 String message = safeMessage(e);
@@ -154,7 +154,7 @@ public class MainActivity extends Activity {
         try (Cursor c = cr.query(uri, new String[]{OpenableColumns.DISPLAY_NAME}, null, null, null)) {
             if (c != null && c.moveToFirst()) { String n = c.getString(0); if (n != null && !n.isEmpty()) return n; }
         } catch (Exception ignored) { }
-        return "FNAF_Animasyon_Test.apk";
+        return "FNAF_Optimize_Test.apk";
     }
     private static String safeMessage(Throwable t) {
         String s = t.getMessage();
