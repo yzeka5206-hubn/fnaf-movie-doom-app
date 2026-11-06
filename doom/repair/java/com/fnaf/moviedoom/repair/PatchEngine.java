@@ -91,7 +91,7 @@ final class PatchEngine {
         if (original.read() != -1 || in.read() != -1)
             throw new IOException("APK veya onarım verisi beklenmedik uzunlukta.");
         if (!MessageDigest.isEqual(oldHash.digest(), expectedOld))
-            throw new IOException("Eski Menü Testi APK'sı beklenen sürüm değil.");
+            throw new IOException("Eski Animasyon Testi APK'sı beklenen sürüm değil.");
         if (!MessageDigest.isEqual(newHash.digest(), expectedNew))
             throw new IOException("Düzeltilmiş APK doğrulanamadı.");
         target.flush();
