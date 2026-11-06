@@ -11,7 +11,10 @@ from pathlib import Path
 BUILD_MARKER = b"FNAF_DIAG_V7_2026"
 REQUIRED_DEX_MARKERS = (
     BUILD_MARKER,
-    b"0.9.4-optimize-test",
+    b"0.9.5-dis-siyah-test",
+    b"fnaf_outside_black",
+    b"outside_black",
+    "DIŞ: SİYAH".encode("utf-8"),
     b"vid_scale_customwidth",
     b"fnaf_cull_stats",
     b"FnafMenuActivity",
@@ -51,7 +54,8 @@ ASSET_SHA256 = {
 SHADER_MEMBER = "shaders_gles/glsl/main.vp"
 SKELETAL_SHADER_SHA256 = "72c457c6f39614b02cb5bf024b363a3375a7c79ef5385519b536a71c0bec8ab5"
 NATIVE_BONE_MARKER = b"FNAF skeletal GLES palette:"
-NATIVE_OPT_MARKERS = (b"FNAF_CULL_STATS", b"FNAF_TEXTURE_STATS", b"FNAF_BONE_STATS")
+NATIVE_OPT_MARKERS = (b"FNAF_CULL_STATS", b"FNAF_TEXTURE_STATS", b"FNAF_BONE_STATS",
+                      b"FNAF_OUTSIDE_STATS")
 NATIVE_LIBRARIES = (
     "lib/arm64-v8a/libuzdoom.so",
 )
