@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Build small, disposable UZDoom integration fixtures from original game assets.
 
-Each player's world/first-person/arm models or each animatronic's world model is
-spawned in a lit room with a named Walk animation. This invokes UZDoom's actual
-IQM loader, animation system, shared bone buffer, GLES renderer and shader.
-Requires an independently installed IWAD; does not copy assets into this repo.
+Each player's world/first-person/arm models or three copies of an animatronic
+model are spawned with a named animation. This invokes UZDoom's IQM/MD3 loader,
+animation system, shared bone buffer, GLES renderer and shader. Requires an
+independently installed IWAD; does not copy game assets into this repo.
 """
 from pathlib import Path
 from zipfile import ZipFile, ZIP_DEFLATED
@@ -18,6 +18,19 @@ GROUPS={n:[(f'Characters/Players/{n}/{model}','Walk',1.2 if i<2 else 1.0) for i,
 GROUPS.update({n:[(f'Characters/Animatronics/{n}/{model}','Walk',1.0)]*3 for n,model in {
     'Freddy':'FreddyMovie.iqm','Bonnie':'BonnieMovie.iqm','Chica':'ChicaMovie.iqm',
     'Foxy':'FoxyMovie.iqm','SpringBonnie':'SpringBonnieMovieTest.iqm'}.items()})
+# These use classic FrameIndex/sprite states in the actual game's MODELDEF,
+# rather than the player's decoupled SetAnimation/BaseFrame route.
+for group, folder, model, clip, scale in [
+    ('FreddyJP','Freddy','FreddyMovieJP.iqm','Freddy',1.0),
+    ('BonnieJP','Bonnie','BonnieMovieJP.iqm','Bonnie',1.0),
+    ('ChicaJS','Chica','ChicaMovieJS.iqm','Chica',1.0),
+    ('FoxyJS','Foxy','FoxyMovieJS.iqm','Foxy',1.0),
+    ('SpringBonnieJS','SpringBonnie','SpringBonnieJS.iqm','AftonAction',1.0),
+    ('Cupcake','Chica','CupcakeMovie.iqm','Cupcake',3.0),
+    ('FreddyPlush','Freddy','FreddyPlush.iqm','Plush',3.0),
+    ('Pepsi','Pepsiman','PepsiMan.iqm','Armature|mixamo.com|Layer0',45.0),
+]:
+    GROUPS[group] = [(f'Characters/Animatronics/{folder}/{model}', clip, scale)] * 3
 
 
 def wad(lumps):
@@ -64,18 +77,22 @@ def main():
     parser.add_argument('game', help='original game PK3')
     parser.add_argument('group', choices=sorted(GROUPS))
     parser.add_argument('out', type=Path)
-    parser.add_argument('frame', type=int, nargs='?', help='optional fixed Walk frame')
+    parser.add_argument('frame', type=int, nargs='?', help='optional fixed frame relative to the group\'s named clip')
     parser.add_argument('--solid-skin', action='store_true', help='diagnostic colored skins to expose each mesh')
     parser.add_argument('--zoom-arm', action='store_true', help='magnify and raise the third (first-person arm) player model for diagnostic comparisons')
+    parser.add_argument('--frame-index', action='store_true', help='drive IQM poses with classic sprite FrameIndex instead of SetAnimation/BaseFrame')
+    parser.add_argument('--pepsi-md3', type=Path, help='use Pepsi MD3 from the actual frame addon (requires Pepsi and --frame-index)')
     args=parser.parse_args()
     game,group,out,frame=args.game,args.group,args.out,args.frame
+    if args.pepsi_md3 and (group != 'Pepsi' or not args.frame_index):
+        parser.error('--pepsi-md3 requires the Pepsi group and --frame-index')
     models=fixture_models(group,args.zoom_arm)
     out.mkdir(parents=True,exist_ok=True)
     if frame is not None and frame < 0: raise ValueError('frame must be nonnegative')
     # Optional frozen poses permit deterministic framebuffer comparisons against
     # a full desktop GL reference; the default is still a real looping animation.
     animation_options = ('framerate: 0, startFrame: '+str(frame)+', flags: SAF_LOOP|SAF_INSTANT'
-                         if frame is not None else 'framerate: 24, flags: SAF_LOOP|SAF_INSTANT')
+                         if frame is not None else 'framerate: 24, flags: SAF_LOOP|SAF_NOOVERRIDE')
     (out/'fixture.wad').write_bytes(map_data(args.zoom_arm))
     png=BytesIO();Image.new('RGBA',(16,16),(128,0,200,255)).save(png,format='PNG')
     classes='version "4.12.0"\n';modeldefs='';ednums='DoomEdNums\n{\n';members=set();solid_assets={}
@@ -90,12 +107,28 @@ def main():
             if frame is not None and frame >= matches[0][2]:
                 raise ValueError(f'{model}: {clip} has {matches[0][2]} frames; requested {frame}')
             cls=f'SkeletalFixture{i}';folder,filename=model.rsplit('/',1)
+            render_scale = scale
+            if args.pepsi_md3:
+                filename = 'PepsiMan-fnaf-frames.md3'
+                # The addon bakes coordinates 128 times larger than the IQM.
+                render_scale = scale / 128.0
+            if args.frame_index:
+                # Real jumpscare and prop classes advance sprite frames and map
+                # them directly to absolute IQM frame numbers in MODELDEF.
+                letters = 'A' if frame is not None else 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'[:min(matches[0][2], 26)]
+                animation_state = f'TSTX {letters} 1;'
+                model_frames = '\n'.join(f' FrameIndex TSTX {letter} 0 {matches[0][1] + (frame if frame is not None else pos)}'
+                                         for pos, letter in enumerate(letters))
+                decoupled = ''
+            else:
+                animation_state = f"TSTX A 0 SetAnimation('{clip}', {animation_options});\n   TSTX A 1;"
+                model_frames = ' BaseFrame'
+                decoupled = '+DECOUPLEDANIMATIONS;'
             classes+=f'''class {cls} : Actor
 {{
- Default {{ Radius 8; Height 72; +NOGRAVITY; +DECOUPLEDANIMATIONS; }}
+ Default {{ Radius 8; Height 72; +NOGRAVITY; {decoupled} }}
  States {{ Spawn:
-   TSTX A 0 SetAnimation('{clip}', {animation_options});
-   TSTX A 1;
+   {animation_state}
    Loop;
  }}
 }}
@@ -109,9 +142,9 @@ def main():
 {{
  Path "{folder}";
  Model 0 "{filename}";
-{skin_line} Scale {scale} {scale} {scale};
+{skin_line} Scale {render_scale} {render_scale} {render_scale};
  AngleOffset 90;
- BaseFrame;
+{model_frames}
 }}
 '''.replace(';\n','\n') # MODELDEF does not use semicolons
             ednums+=f' {30000+i} = {cls}\n'
@@ -125,8 +158,14 @@ def main():
         seed_folder,seed_filename=GROUPS[group][0][0].rsplit('/',1)
         modeldefs+=f'Model SkeletalFixtureHashSeed {{ Path "{seed_folder}" Model 0 "{seed_filename}" FrameIndex TSTX A 0 0 }}\n'
         dst.writestr('ZSCRIPT',classes);dst.writestr('MODELDEF',modeldefs)
-        dst.writestr('MAPINFO',ednums);dst.writestr('sprites/TSTXA0.png',png.getvalue())
+        dst.writestr('MAPINFO',ednums)
+        for letter in ('ABCDEFGHIJKLMNOPQRSTUVWXYZ' if args.frame_index and frame is None else 'A'):
+            dst.writestr(f'sprites/TSTX{letter}0.png',png.getvalue())
         for n in sorted(members):dst.writestr(n,src.read(n))
+        if args.pepsi_md3:
+            md3name = 'Characters/Animatronics/Pepsiman/PepsiMan-fnaf-frames.md3'
+            with ZipFile(args.pepsi_md3) as addon:
+                dst.writestr(md3name, addon.read(md3name))
         for name,color in sorted(solid_assets.items()):
             solid=BytesIO();Image.new('RGBA',(8,8),color).save(solid,format='PNG')
             dst.writestr(name,solid.getvalue())

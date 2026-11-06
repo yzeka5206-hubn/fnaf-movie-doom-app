@@ -2,8 +2,9 @@
 """Exercise solid-skin fixture poses through a patched desktop GLES engine.
 
 This requires an X11 display, ImageMagick's import, xdotool, a Freedoom IWAD,
-and pre-generated --solid-skin fixed poses with nodes. It does not test an APK,
-phone, original game logic, every animation or anatomical correctness.
+and pre-generated --solid-skin fixtures with nodes. Default mode compares two
+fixed poses; --live captures a loop twice within one running engine process. It
+does not test an APK, phone, original game logic, every animation or anatomy.
 
 Example:
  DISPLAY=:91 python3 run_engine_fixtures.py /path/to/uzdoom /path/to/freedoom2.wad \
@@ -36,15 +37,17 @@ def stop(proc):
                 pass
 
 
-def capture(engine, iwad, fixture, output, group, frame, timeout):
+def capture(engine, iwad, fixture, output, group, frame, timeout, live_interval=None):
     result = output / f'{group}-{frame}'
     result.mkdir(parents=True, exist_ok=True)
     log = result / 'engine.log'
     stdout = result / 'stdout.log'
     screenshot = result / 'frame.png'
+    later = result / 'frame-later.png'
     config = result / 'config.ini'
     log.unlink(missing_ok=True)
     screenshot.unlink(missing_ok=True)
+    later.unlink(missing_ok=True)
     env = os.environ.copy()
     env.setdefault('LIBGL_ALWAYS_SOFTWARE', '1')
     env.setdefault('LP_NUM_THREADS', '2')
@@ -84,7 +87,20 @@ def capture(engine, iwad, fixture, output, group, frame, timeout):
                             # MAP01 can be logged while the startup splash is still
                             # on screen; its cyan progress bar alone is not an actor.
                             if im.size == (640, 480) and min(actor_areas) >= 20:
-                                return screenshot
+                                if live_interval is None:
+                                    return screenshot
+                                # Same process and window: this proves the loop
+                                # progresses, not just that two restarts differ.
+                                time.sleep(live_interval)
+                                if proc.poll() is not None:
+                                    raise RuntimeError('engine exited between live captures')
+                                later_run = subprocess.run(['import', '-window', windows[-1], str(later)],
+                                                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                                if later_run.returncode != 0 or not later.exists():
+                                    raise RuntimeError('could not capture the second live frame')
+                                if Image.open(later).size != (640, 480):
+                                    raise RuntimeError('second live frame has the wrong dimensions')
+                                return screenshot, later
                             last_message = f'window {im.size}, actor pixels {actor_areas}'
                 time.sleep(.5)  # allow the renderer to produce its first frame
             raise TimeoutError(f'{group} frame {frame}: {last_message}; log tail: {text[-1000:]}')
@@ -101,14 +117,21 @@ def main():
     parser.add_argument('groups', nargs='+')
     parser.add_argument('--timeout', type=int, default=90)
     parser.add_argument('--zoom-arm', action='store_true', help='fixtures were created with --zoom-arm')
-    parser.add_argument('--game', type=lambda p: Path(p).resolve(), help='original game PK3 for independent CPU-pose comparison')
+    parser.add_argument('--live', action='store_true', help='compare two captures in the same looping engine process (fixtures named GROUP-live)')
+    parser.add_argument('--game', type=lambda p: Path(p).resolve(), help='original game PK3 for independent fixed-pose CPU comparison')
     args = parser.parse_args()
+    if args.live and args.game:
+        parser.error('--game CPU matching is for fixed-pose mode, not --live')
     args.output.mkdir(parents=True, exist_ok=True)
     all_results = {}
     for group in args.groups:
         try:
-            frames = [capture(args.engine, args.iwad, args.fixtures / f'{group}-{frame}',
-                              args.output, group, frame, args.timeout) for frame in (0, 15)]
+            if args.live:
+                frames = capture(args.engine, args.iwad, args.fixtures / f'{group}-live',
+                                 args.output, group, 'live', args.timeout, live_interval=0.65)
+            else:
+                frames = [capture(args.engine, args.iwad, args.fixtures / f'{group}-{frame}',
+                                  args.output, group, frame, args.timeout) for frame in (0, 15)]
             result = {'motion': compare(*frames)}
             if args.game:
                 result['cpu_frame_0'] = compare_pose(args.game, group, 0, frames[0], zoom_arm=args.zoom_arm)
@@ -123,7 +146,8 @@ def main():
     if any('error' in v or not all(i['pass'] for section in v.values() for i in section.values())
            for v in all_results.values()):
         raise SystemExit('One or more fixture comparisons failed')
-    print('PASS: selected three-actor fixtures changed between fixed Walk poses' +
+    mode = 'within a live looping animation' if args.live else 'between fixed animation poses'
+    print(f'PASS: selected three-actor fixtures changed {mode}' +
           (' and matched CPU poses' if args.game else ''))
 
 

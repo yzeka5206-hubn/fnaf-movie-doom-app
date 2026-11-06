@@ -46,9 +46,11 @@ its zero weights suppress animation. The MD3 addon stays loaded unchanged.
 * `python3 tools/fnaf-gles-skinning/make_engine_fixture.py GAME.pk3 Mike OUT`
   constructs a tiny room with three live `Walk` actors (world/legs/arm). Other
   accepted groups are the seven remaining player names and Freddy, Bonnie,
-  Chica, Foxy or SpringBonnie. An optional final integer selects a fixed
-  zero-rate Walk frame for comparisons with a desktop GL reference. The tool
-  checks the animation exists and that a requested frame is in range. Generate
+  Chica, Foxy or SpringBonnie, plus named jumpscare/prop groups. An optional
+  final integer selects a fixed clip frame for comparisons with a CPU
+  reference. Without that integer, the generated clip loops, with the same
+  `SAF_NOOVERRIDE` behavior used by the game. The tool checks the animation
+  exists and that a requested frame is in range. Generate
   nodes with `zdbsp -X -o OUT/fixture-nodes.wad OUT/fixture.wad`, and load the
   resulting WAD and `OUT/fixture.pk3` with an independently installed IWAD.
   For framebuffer comparisons, `--solid-skin` uses three diagnostic colors so
@@ -62,7 +64,12 @@ its zero weights suppress animation. The MD3 addon stays loaded unchanged.
   `--zoom-arm` to `verify_fixture_pose.py` or `run_engine_fixtures.py` as well.
   This magnifies/raises only the third test actor; the independent reference
   applies the same diagnostic geometry and does not alter any game asset.
-  The runner requires all three colors, avoiding a false capture of the cyan
+  `--frame-index` tests the classic IQM sprite-frame path used by actual
+  jumpscares and props. For Pepsi, `--frame-index --pepsi-md3 ADDON.pk3` uses
+  the exact baked MD3 bytes from the shipped frame addon and checks them against
+  the original IQM CPU reference. To exercise progress in one running engine,
+  generate a `GROUP-live` folder without a fixed frame and use the runner's
+  `--live` mode. The runner requires all three colors, avoiding a false capture of the cyan
   progress bar shown during startup. Fixtures are diagnostic only, stay local,
   and are neither the game nor an Android test. Their dummy `FrameIndex` seeds
   the reference engine's sprite hash: a `BaseFrame`-only isolated room can
@@ -70,15 +77,17 @@ its zero weights suppress animation. The MD3 addon stays loaded unchanged.
 
 ## Desktop renderer integration results
 
-A patched desktop GLES 3.2 llvmpipe engine rendered two fixed Walk poses for
-all eight selectable player groups (world, first-person legs and arms) and the
-five main animatronic groups. Each of the three independently colored actors
+A patched desktop GLES 3.2 llvmpipe engine rendered and compared two fixed
+poses for all eight selectable player groups (world, first-person legs and
+arms), the five main animatronics, five separate jumpscare models, Cupcake,
+Freddy Plush, and the actual Pepsi MD3 addon. Each of three colored test actors
 changed on screen and matched independently CPU-projected IQM silhouettes
-(IoU >= 0.55). The magnified first-person arm test was used for Nick and Alan.
-This tests a pair of **fixed** Walk poses through the actual engine renderer;
-it is not a live-game, every-animation, APK or Xiaomi result. A desktop-only
-compatibility build was required for the Android fork's resources and ES3
-context; those compatibility edits were not shipped in the Android binary.
+(IoU >= 0.55). The magnified first-person arm test was used for Nick and Alan;
+Cupcake and Plush were magnified for visibility. The same groups also moved
+between two captures **within one running engine process**. This is still a
+controlled test room, not a live-game, every-animation, APK or Xiaomi result.
+A desktop-only compatibility build was required for the Android fork's
+resources and ES3 context; those edits were not shipped in the Android binary.
 
 The mathematical tests sample vertices and frames; they are not proof of
 whole-game behavior, phone rendering, lifecycle correctness, or performance.

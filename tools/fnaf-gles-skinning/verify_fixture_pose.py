@@ -3,7 +3,7 @@
 
 Usage: verify_fixture_pose.py ORIGINAL_GAME.pk3 Mike 15 screenshot.png
 Requires the --solid-skin fixture and its default 640x480 camera. The CPU
-reconstructs every vertex of each model's named Walk frame, projects the
+reconstructs every vertex of each model's named animation frame, projects the
 triangles for the generated room, and compares each solid-color silhouette.
 It is an integration diagnostic, not proof of Android or complete gameplay.
 """
@@ -29,16 +29,16 @@ PIXEL_STRETCH = 1.2
 FOCAL_LENGTH = 320  # 640-pixel width at a 90 degree field of view
 
 
-def projected_mask(model_bytes, actor_index, scale, frame, bind_pose=False, actor_height=ACTOR_HEIGHT):
+def projected_mask(model_bytes, actor_index, scale, frame, bind_pose=False, actor_height=ACTOR_HEIGHT, clip_name='Walk'):
     h = header(model_bytes)
     a = arrays(model_bytes, h)
     vertices = np.asarray(a[0], dtype=np.float64)
     # The engine converts IQM's XYZ to its XZY model-space ordering.
     points = np.column_stack((vertices[:, 0], vertices[:, 2], vertices[:, 1], np.ones(len(vertices))))
     if not bind_pose:
-        clip = [x for x in animations(model_bytes, h) if x[0] == 'Walk']
+        clip = [x for x in animations(model_bytes, h) if x[0] == clip_name]
         if len(clip) != 1 or frame < 0 or frame >= clip[0][2]:
-            raise ValueError(f'invalid Walk frame {frame}')
+            raise ValueError(f'invalid {clip_name} frame {frame}')
         joints, inverse = binding(model_bytes, h)
         matrices = palette(model_bytes, h, joints, inverse, clip[0][1] + frame)
         selectors = a[4]
@@ -75,9 +75,9 @@ def compare_pose(game, group, frame, screenshot, bind_pose=False, threshold=0.55
         raise ValueError('expected a 640x480 fixture screenshot')
     output = {}
     with ZipFile(game) as archive:
-        for i, (model, _clip, scale) in enumerate(fixture_models(group, zoom_arm)):
+        for i, (model, clip, scale) in enumerate(fixture_models(group, zoom_arm)):
             height = ARM_ZOOM_HEIGHT if zoom_arm and i == 2 else ACTOR_HEIGHT
-            predicted = projected_mask(archive.read(model), i, scale, frame, bind_pose, actor_height=height)
+            predicted = projected_mask(archive.read(model), i, scale, frame, bind_pose, actor_height=height, clip_name=clip)
             target = actual[i]
             intersection = int(np.logical_and(predicted, target).sum())
             union = int(np.logical_or(predicted, target).sum())
