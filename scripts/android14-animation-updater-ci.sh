@@ -13,7 +13,7 @@ unset AUTH_HEADER ENCODED DECODED
 OLD_DIR="$RUNNER_TEMP/original-artifact"
 mkdir -p "$OLD_DIR"
 curl -fsSL --retry 2 -H "Authorization: Bearer $TOKEN" -H 'Accept: application/vnd.github+json' \
-  https://api.github.com/repos/yzeka5206-hubn/fnaf-movie-doom-app/actions/artifacts/13467672895/zip \
+  https://api.github.com/repos/yzeka5206-hubn/fnaf-movie-doom-app/actions/artifacts/13502001259/zip \
   -o "$RUNNER_TEMP/original-artifact.zip"
 unset TOKEN
 HELPER=${1:?Pass the APK built by this CI job}
@@ -27,7 +27,7 @@ with zipfile.ZipFile(sys.argv[1]) as z:
   import shutil;shutil.copyfileobj(src,dst,1024*1024)
 PYOLD
 OLD="$OLD_DIR/old.apk"
-echo '6872aa42e59cfd66bfceae35cd1c289382f533dd2b91d57ce0d8bf91e7a256a4  '"$OLD" | sha256sum -c -
+echo 'f55c97179051b1ae5b36a255baa79d4c33e03c51ae0c15b4b0628f7a68ff9286  '"$OLD" | sha256sum -c -
 cleanup() {
   rc=$?
   echo "=== helper test cleanup (exit $rc); emulator log tail ==="
@@ -96,12 +96,12 @@ printf '=== Android version / install actual original app and helper ===\n'
 "$ADB" shell getprop ro.build.version.release
 "$ADB" install --no-streaming "$OLD"
 # Sentinel demonstrates the original package's private data survives preparation
-# and installation of the separately packaged animation test.
-"$ADB" shell run-as com.fnaf.moviedoom.animationtest sh -c "'mkdir -p files; echo old-data-preserved > files/updater-ci-sentinel.txt'"
+# and an in-place update of the previously installed optimized package.
+"$ADB" shell run-as com.fnaf.moviedoom.optimized sh -c "'mkdir -p files; echo optimized-data-preserved > files/updater-ci-sentinel.txt'"
 "$ADB" install "$HELPER"
 "$ADB" logcat -c
 "$ADB" shell wm dismiss-keyguard || true
-"$ADB" shell am start -W -n com.fnaf.moviedoom.optimizeupdater/com.fnaf.moviedoom.repair.MainActivity
+"$ADB" shell am start -W -n com.fnaf.moviedoom.outsideupdater/com.fnaf.moviedoom.repair.MainActivity
 "$ADB" shell uiautomator dump /sdcard/window.xml >/dev/null
 "$ADB" shell cat /sdcard/window.xml > "$RUNNER_TEMP/helper-window.xml"
 read X Y < <(python3 - "$RUNNER_TEMP/helper-window.xml" <<'PY'
@@ -122,15 +122,15 @@ if ! python3 - "$ADB" <<'PYPUBLISHED'
 import subprocess,sys,time
 adb=sys.argv[1]; start=time.monotonic(); end=start+300; sampled=set()
 while time.monotonic()<end:
- result=subprocess.run([adb,'shell','test','-f','/sdcard/Download/FNAF_Optimize_Test.apk'], stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+ result=subprocess.run([adb,'shell','test','-f','/sdcard/Download/FNAF_Dis_Deneme.apk'], stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
  if result.returncode==0:
   print('Published output detected after',round(time.monotonic()-start),'seconds',flush=True);break
  elapsed=time.monotonic()-start
  for mark in (30,120,240):
   if elapsed>=mark and mark not in sampled:
    sampled.add(mark); print('=== updater diagnosis at',mark,'seconds ===',flush=True)
-   subprocess.run([adb,'shell','run-as','com.fnaf.moviedoom.optimizeupdater','ls','-la','/sdcard/Download'],timeout=20,check=False)
-   pid=subprocess.run([adb,'shell','pidof','com.fnaf.moviedoom.optimizeupdater'],capture_output=True,text=True,timeout=10).stdout.strip()
+   subprocess.run([adb,'shell','run-as','com.fnaf.moviedoom.outsideupdater','ls','-la','/sdcard/Download'],timeout=20,check=False)
+   pid=subprocess.run([adb,'shell','pidof','com.fnaf.moviedoom.outsideupdater'],capture_output=True,text=True,timeout=10).stdout.strip()
    if pid:
     try: subprocess.run([adb,'shell','debuggerd','-b',pid],timeout=20,check=False)
     except subprocess.TimeoutExpired: print('debuggerd timed out',flush=True)
@@ -146,13 +146,14 @@ then
 fi
 "$ADB" shell uiautomator dump /sdcard/helper-after.xml >/dev/null || true
 "$ADB" shell cat /sdcard/helper-after.xml || true
-"$ADB" pull /sdcard/Download/FNAF_Optimize_Test.apk "$RUNNER_TEMP/repaired-fixture.apk" >/dev/null
-echo 'f55c97179051b1ae5b36a255baa79d4c33e03c51ae0c15b4b0628f7a68ff9286  '"$RUNNER_TEMP/repaired-fixture.apk" | sha256sum -c -
+"$ADB" pull /sdcard/Download/FNAF_Dis_Deneme.apk "$RUNNER_TEMP/repaired-fixture.apk" >/dev/null
+echo 'becb43039e405b619dc39c8b2d00e5d0ffe991fac1a6bc6e2edba837371b8879  '"$RUNNER_TEMP/repaired-fixture.apk" | sha256sum -c -
 "$ANDROID_SDK_ROOT/build-tools/36.0.0/apksigner" verify --verbose "$RUNNER_TEMP/repaired-fixture.apk" | head -4
-"$ADB" shell pm path com.fnaf.moviedoom.animationtest
-# The target is a distinct package: both should coexist and old app data remain.
-"$ADB" install --no-streaming "$RUNNER_TEMP/repaired-fixture.apk"
-"$ADB" shell pm path com.fnaf.moviedoom.animationtest
 "$ADB" shell pm path com.fnaf.moviedoom.optimized
-"$ADB" shell run-as com.fnaf.moviedoom.animationtest cat files/updater-ci-sentinel.txt | tr -d '\r' | grep -Fx 'old-data-preserved'
-printf 'PASS: REAL old APK reconstructed on Android 14 to exact target SHA, valid signature, both apps coexist, old private data intact\n' 
+# Real same-package upgrade: Android must accept the signing certificate and
+# retain the existing app's private data instead of uninstalling it.
+"$ADB" install -r --no-streaming "$RUNNER_TEMP/repaired-fixture.apk"
+"$ADB" shell pm path com.fnaf.moviedoom.optimized
+"$ADB" shell dumpsys package com.fnaf.moviedoom.optimized | grep -F 'versionCode=14'
+"$ADB" shell run-as com.fnaf.moviedoom.optimized cat files/updater-ci-sentinel.txt | tr -d '\r' | grep -Fx 'optimized-data-preserved'
+printf 'PASS: REAL optimize APK reconstructed and upgraded in-place on Android 14; signature, version 14 and private-data sentinel intact\n'

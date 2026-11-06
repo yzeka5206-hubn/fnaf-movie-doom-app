@@ -7,11 +7,11 @@ android {
     namespace = "com.fnaf.moviedoom.repair"
     compileSdk = 36
     defaultConfig {
-        applicationId = "com.fnaf.moviedoom.optimizeupdater"
+        applicationId = "com.fnaf.moviedoom.outsideupdater"
         minSdk = 33
         targetSdk = 36
         versionCode = 1
-        versionName = "1.0"
+        versionName = "1.0-night-outside"
     }
     sourceSets.getByName("main") {
         manifest.srcFile("repair/AndroidManifest.xml")
@@ -30,7 +30,7 @@ tasks.matching { it.name == "assembleDebug" }.configureEach {
     doLast {
         val dir = layout.buildDirectory.dir("outputs/apk/debug").get().asFile
         val old = dir.resolve("doom-debug.apk")
-        val named = dir.resolve("FNAF-Optimize-Guncelleyici.apk")
+        val named = dir.resolve("FNAF-Dis-Deneme-Guncelleyici.apk")
         check(old.isFile && old.renameTo(named)) { "Could not name the repair APK" }
     }
 }
