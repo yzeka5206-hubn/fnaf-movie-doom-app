@@ -31,6 +31,14 @@ for group, folder, model, clip, scale in [
     ('Pepsi','Pepsiman','PepsiMan.iqm','Armature|mixamo.com|Layer0',45.0),
 ]:
     GROUPS[group] = [(f'Characters/Animatronics/{folder}/{model}', clip, scale)] * 3
+# Uniform diagnostic scales keep three large props inside the small room; they
+# are not changes to the actual game's MODELDEF.
+GROUPS.update({
+    'Curtain1': [('Props/Scenery/Curtain/Palco.iqm', 'Opening', .30)] * 3,
+    'Curtain2': [('Props/Scenery/Curtain/palco2.iqm', 'Open', .50)] * 3,
+    'CarIntro': [('Props/Scenery/MikeCar/CarScene2.iqm', 'default_sequence_Armature_0', .15)] * 3,
+    'DriverIntro': [('Characters/Players/Mike/MikeCarScene2.iqm', 'Cut2', .20)] * 3,
+})
 
 
 def wad(lumps):

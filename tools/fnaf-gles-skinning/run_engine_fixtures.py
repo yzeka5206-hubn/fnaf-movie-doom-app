@@ -116,12 +116,15 @@ def main():
     parser.add_argument('output', type=lambda p: Path(p).resolve())
     parser.add_argument('groups', nargs='+')
     parser.add_argument('--timeout', type=int, default=90)
+    parser.add_argument('--frames', type=int, nargs=2, default=(0, 15), metavar=('FIRST', 'SECOND'), help='fixed clip-relative frames (default 0 and 15)')
     parser.add_argument('--zoom-arm', action='store_true', help='fixtures were created with --zoom-arm')
     parser.add_argument('--live', action='store_true', help='compare two captures in the same looping engine process (fixtures named GROUP-live)')
     parser.add_argument('--game', type=lambda p: Path(p).resolve(), help='original game PK3 for independent fixed-pose CPU comparison')
     args = parser.parse_args()
     if args.live and args.game:
         parser.error('--game CPU matching is for fixed-pose mode, not --live')
+    if any(frame < 0 for frame in args.frames) or args.frames[0] == args.frames[1]:
+        parser.error('--frames must be two different nonnegative indices')
     args.output.mkdir(parents=True, exist_ok=True)
     all_results = {}
     for group in args.groups:
@@ -131,11 +134,11 @@ def main():
                                  args.output, group, 'live', args.timeout, live_interval=0.65)
             else:
                 frames = [capture(args.engine, args.iwad, args.fixtures / f'{group}-{frame}',
-                                  args.output, group, frame, args.timeout) for frame in (0, 15)]
+                                  args.output, group, frame, args.timeout) for frame in args.frames]
             result = {'motion': compare(*frames)}
             if args.game:
-                result['cpu_frame_0'] = compare_pose(args.game, group, 0, frames[0], zoom_arm=args.zoom_arm)
-                result['cpu_frame_15'] = compare_pose(args.game, group, 15, frames[1], zoom_arm=args.zoom_arm)
+                for frame, screenshot in zip(args.frames, frames):
+                    result[f'cpu_frame_{frame}'] = compare_pose(args.game, group, frame, screenshot, zoom_arm=args.zoom_arm)
             all_results[group] = result
             good = all(info['pass'] for section in result.values() for info in section.values())
             print(f'{group}: {"PASS" if good else "FAIL"} {json.dumps(result)}', flush=True)

@@ -69,8 +69,10 @@ its zero weights suppress animation. The MD3 addon stays loaded unchanged.
   the exact baked MD3 bytes from the shipped frame addon and checks them against
   the original IQM CPU reference. To exercise progress in one running engine,
   generate a `GROUP-live` folder without a fixed frame and use the runner's
-  `--live` mode. The runner requires all three colors, avoiding a false capture of the cyan
-  progress bar shown during startup. Fixtures are diagnostic only, stay local,
+  `--live` mode. For another pair (e.g. intro car frames 600 and 700), generate
+  those named folders and pass `--frames 600 700`. The runner requires all
+  three colors, avoiding a false capture of the cyan progress bar shown during
+  startup. Fixtures are diagnostic only, stay local,
   and are neither the game nor an Android test. Their dummy `FrameIndex` seeds
   the reference engine's sprite hash: a `BaseFrame`-only isolated room can
   divide by zero during startup.
@@ -84,10 +86,19 @@ Freddy Plush, and the actual Pepsi MD3 addon. Each of three colored test actors
 changed on screen and matched independently CPU-projected IQM silhouettes
 (IoU >= 0.55). The magnified first-person arm test was used for Nick and Alan;
 Cupcake and Plush were magnified for visibility. The same groups also moved
-between two captures **within one running engine process**. This is still a
-controlled test room, not a live-game, every-animation, APK or Xiaomi result.
-A desktop-only compatibility build was required for the Android fork's
-resources and ES3 context; those edits were not shipped in the Android binary.
+between two captures **within one running engine process**. Both curtain IQMs
+passed fixed-pose CPU and live-loop checks, and the original intro car/driver
+IQMs matched frames 600 and 700 using the sprite `FrameIndex` route.
+
+The original game archives were also loaded in the desktop build with sound
+and music disabled. The title and outside intro appeared, the car was visible,
+and the log later reached MIDNIGHT. The game logged missing model paths
+and material/texture warnings; these were not investigated or declared fixed.
+The software renderer became too slow for reliable interactive gameplay tests.
+Fixture and desktop intro results do not prove complete gameplay, every
+animation, APK behavior or Xiaomi support. A desktop-only compatibility build
+was required for the Android fork's resources and ES3 context; those edits
+were not shipped in the Android binary.
 
 The mathematical tests sample vertices and frames; they are not proof of
 whole-game behavior, phone rendering, lifecycle correctness, or performance.
