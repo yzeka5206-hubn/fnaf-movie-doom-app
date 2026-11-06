@@ -48,7 +48,7 @@ public class MainActivity extends Activity {
         TextView title = text("FNAF OPTİMİZE GÜNCELLEMESİ", 25, true);
         body.addView(title);
         TextView desc = text("Yeni optimize testi telefonda yüklü FNAF Animasyon Testi'nden hazırlar. " +
-                "Büyük oyun dosyasını yeniden indirmez; internet kullanmaz. Telefonda en az 1 GB boş alan önerilir.\n\n" +
+                "Büyük oyun dosyasını yeniden indirmez; internet kullanmaz. Telefonda en az 2 GB boş alan önerilir.\n\n" +
                 "Çalışan animasyon testi sürümünü otomatik tanır. Eski oyuna ve kayıtlarına dokunmaz; yeni test ayrı kurulacaktır.", 16, false);
         desc.setPadding(0, dp(16), 0, dp(18)); body.addView(desc);
         prepare = new Button(this); prepare.setText("YENİ APK'YI HAZIRLA");
