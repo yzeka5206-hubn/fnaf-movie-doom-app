@@ -1,18 +1,19 @@
-name: Build FNAF Movie Doom APK
+name: Build and test offline animation updater
 
 on:
   workflow_dispatch:
-  push:
-    branches: [ main, master ]
+
+permissions:
+  contents: read
+  actions: read
 
 jobs:
-  build:
+  updater:
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
-      - name: Checkout
+      - name: Checkout updater sources (game LFS files not required)
         uses: actions/checkout@v4
-        with:
-          lfs: true
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -23,17 +24,59 @@ jobs:
       - name: Install Android SDK components
         run: |
           yes | "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
-          "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" "platforms;android-36" "build-tools;36.0.0"
+          "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" 'platforms;android-36' 'build-tools;36.0.0'
 
-      - name: Grant execute permission
-        run: chmod +x ./gradlew
+      - name: Check patch safety and exact source and target headers
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/patch-classes"
+          javac -encoding UTF-8 -d "$RUNNER_TEMP/patch-classes" \
+            doom/repair/java/com/fnaf/moviedoom/repair/PatchEngine.java doom/repair/tests/Test.java
+          java -cp "$RUNNER_TEMP/patch-classes" com.fnaf.moviedoom.repair.Test
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib,struct
+          root=Path('doom/repair/assets')
+          target='6872aa42e59cfd66bfceae35cd1c289382f533dd2b91d57ce0d8bf91e7a256a4'
+          variants={
+            'repair-current.dat':('f7504084a9d64adb89a9058cdb28a896b1452e8a0fc7188a7684d5d82b8cc74e','e65442609a97f027b721a6d4e6bdee6ff91814ef75c4b821abc7d4c632c6c693'),
+            'repair-previous.dat':('2b026cbc834b15071231eaf63cbd3b2fab8f0317ae161e979033df3fa067ebef','83a53320099a5aae126d3b9fe22f02eb20bec3e4f018b7ff919706342c0c1b6c'),
+            'repair-older.dat':('e279e8a9e90240e71f2c8049b4b35ecfbf083d510404ad79111ec00d593631fb','699d07a855e97901241ca0fbc48747dcbf313922b80ddb232377c6e59ad5fc73'),
+          }
+          for name,(source,patch_sha) in variants.items():
+              data=(root/name).read_bytes()
+              assert hashlib.sha256(data).hexdigest()==patch_sha, name
+              assert data[:8]==b'FNAFPCH2' and data[24:56].hex()==source and data[56:88].hex()==target, name
+              count=struct.unpack('>I',data[88:92])[0]
+              assert 0<count<=16384, (name,count)
+              print('PASS',name,'whole patch SHA, source SHA, target SHA,',count,'operations')
+          PY
 
-      - name: Build debug APK
-        run: ./gradlew :doom:assembleDebug --no-daemon --stacktrace
+      - name: Build offline updater
+        run: |
+          chmod +x ./gradlew
+          ./gradlew :doom:assembleDebug --no-daemon
 
-      - name: Upload APK
+      - name: Verify updater package, permissions, and signature
+        run: |
+          set -euo pipefail
+          APK=doom/build/outputs/apk/debug/FNAF-Animasyon-Guncelleyici.apk
+          test -s "$APK"
+          sha256sum "$APK"
+          "$ANDROID_SDK_ROOT/build-tools/36.0.0/apksigner" verify --verbose "$APK"
+          "$ANDROID_SDK_ROOT/build-tools/36.0.0/aapt" dump badging "$APK" | grep '^package: name=' | grep "com.fnaf.moviedoom.animationupdater"
+          if "$ANDROID_SDK_ROOT/build-tools/36.0.0/aapt" dump permissions "$APK" | grep -q 'android.permission.INTERNET'; then
+            echo 'Unexpected network permission'; exit 1
+          fi
+          echo 'PASS unique updater package and no INTERNET permission'
+
+      - name: Android 14 real-APK preparation and side-by-side installation
+        run: bash scripts/android14-animation-updater-ci.sh "$PWD/doom/build/outputs/apk/debug/FNAF-Animasyon-Guncelleyici.apk"
+
+      - name: Upload verified updater APK
         uses: actions/upload-artifact@v4
         with:
-          name: FNAF-Movie-Doom-APK
-          path: doom/build/outputs/apk/debug/*.apk
+          name: FNAF-Animasyon-Guncelleyici
+          path: doom/build/outputs/apk/debug/FNAF-Animasyon-Guncelleyici.apk
           if-no-files-found: error
+          retention-days: 14

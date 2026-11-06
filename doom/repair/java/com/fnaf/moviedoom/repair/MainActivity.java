@@ -45,11 +45,11 @@ public class MainActivity extends Activity {
         LinearLayout body = new LinearLayout(this); body.setOrientation(LinearLayout.VERTICAL);
         body.setPadding(pad, dp(32), pad, dp(32)); body.setBackgroundColor(Color.rgb(20, 23, 29));
         scroller.addView(body);
-        TextView title = text("FNAF MENÜ VE ANİMASYON GÜNCELLEMESİ", 25, true);
+        TextView title = text("FNAF ANİMASYON GÜNCELLEMESİ", 25, true);
         body.addView(title);
-        TextView desc = text("Yeni duraklatma menüsü ve kısmi animasyon testini telefonda yüklü FNAF Menü Testi'nden hazırlar. " +
+        TextView desc = text("Yeni animasyon testini telefonda yüklü FNAF Menü Testi'nden hazırlar. " +
                 "Büyük oyun dosyasını yeniden indirmez; internet kullanmaz. Telefonda en az 1 GB boş alan önerilir.\n\n" +
-                "Son iki Menü Testi sürümünü otomatik tanır. Ayrı v7 oyununa dokunmaz; kurulu test hazırlama sırasında silinmez.", 16, false);
+                "Desteklenen üç Menü Testi sürümünü otomatik tanır. Eski oyuna ve kayıtlarına dokunmaz; yeni test ayrı kurulacaktır.", 16, false);
         desc.setPadding(0, dp(16), 0, dp(18)); body.addView(desc);
         prepare = new Button(this); prepare.setText("YENİ APK'YI HAZIRLA");
         body.addView(prepare, new LinearLayout.LayoutParams(-1, -2));
@@ -113,20 +113,19 @@ public class MainActivity extends Activity {
             Uri outputUri = null;
             ContentResolver cr = getContentResolver();
             try {
-                // Support the last two published menu tests without asking the
-                // player which one is installed. The source hash also prevents
-                // producing a large invalid output from an unrelated APK.
+                // Select a supported installed menu test by its complete SHA.
+                // A different APK is rejected before any output is created.
                 PatchEngine.SourceSignature signature;
                 try (InputStream original = source.open()) { signature = PatchEngine.identify(original); }
                 String selectedPatch = null;
-                for (String candidate : new String[]{"repair-current.dat", "repair-previous.dat"}) {
+                for (String candidate : new String[]{"repair-current.dat", "repair-previous.dat", "repair-older.dat"}) {
                     try (InputStream header = getAssets().open(candidate)) {
                         if (PatchEngine.matchesSource(header, signature)) { selectedPatch = candidate; break; }
                     }
                 }
-                if (selectedPatch == null) throw new IOException("Kurulu APK desteklenen son iki Menü Testi sürümünden değil.");
+                if (selectedPatch == null) throw new IOException("Bu APK desteklenen üç Menü Testi sürümünden değil.");
                 ContentValues meta = new ContentValues();
-                meta.put(MediaStore.Downloads.DISPLAY_NAME, "FNAF_Menu_Animasyon_Test.apk");
+                meta.put(MediaStore.Downloads.DISPLAY_NAME, "FNAF_Animasyon_Test.apk");
                 meta.put(MediaStore.Downloads.MIME_TYPE, "application/vnd.android.package-archive");
                 meta.put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS);
                 meta.put(MediaStore.Downloads.IS_PENDING, 1);
@@ -140,7 +139,7 @@ public class MainActivity extends Activity {
                 ContentValues complete = new ContentValues(); complete.put(MediaStore.Downloads.IS_PENDING, 0);
                 if (cr.update(outputUri, complete, null, null) != 1) throw new IOException("Yeni APK tamamlanamadı.");
                 String fileName = displayName(cr, outputUri);
-                runOnUiThread(() -> finishWork("Hazır ve doğrulandı!\n\n1. Yeni sürüm farklı imzalı: önce yalnızca eski ‘FNAF Menü Testi’ni kaldırman gerekir. Testin kayıtları ve ayarları silinebilir. Gerekliyse oyunun başlatıcı ayarlarındaki Yedekle düğmesiyle önce kayıtlarını yedekle; oyun içi tüm ayarlar yedeklenmeyebilir. Ayrı v7'yi kaldırma.\n\n2. Dosyalar → İndirilenler → " + fileName + " dosyasını aç ve yükle.\n\nİstersen işlemden sonra bu güncelleyiciyi kaldırabilirsin."));
+                runOnUiThread(() -> finishWork("Hazır ve doğrulandı!\n\n1. Eski oyunu SİLME. Yeni animasyon testi ayrı bir uygulama olarak kurulacak.\n\n2. Dosyalar → İndirilenler → " + fileName + " dosyasını aç ve yükle.\n\nYeni test eski oyunun kayıtlarını otomatik devralmaz. İstersen işlemden sonra bu güncelleyiciyi kaldırabilirsin."));
             } catch (Exception e) {
                 if (outputUri != null) try { cr.delete(outputUri, null, null); } catch (Exception ignored) { }
                 String message = safeMessage(e);
@@ -155,7 +154,7 @@ public class MainActivity extends Activity {
         try (Cursor c = cr.query(uri, new String[]{OpenableColumns.DISPLAY_NAME}, null, null, null)) {
             if (c != null && c.moveToFirst()) { String n = c.getString(0); if (n != null && !n.isEmpty()) return n; }
         } catch (Exception ignored) { }
-        return "FNAF_Menu_Animasyon_Test.apk";
+        return "FNAF_Animasyon_Test.apk";
     }
     private static String safeMessage(Throwable t) {
         String s = t.getMessage();

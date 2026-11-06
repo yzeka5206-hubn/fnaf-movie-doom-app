@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <queries><package android:name="com.fnaf.moviedoom.menutest" /></queries>
-    <application android:allowBackup="false" android:label="FNAF Menü ve Animasyon Güncelleme"
+    <application android:allowBackup="false" android:label="FNAF Animasyon Güncelleme"
         android:theme="@android:style/Theme.Material.Light.NoActionBar">
         <activity android:name="com.fnaf.moviedoom.repair.MainActivity" android:exported="true"
             android:configChanges="orientation|keyboardHidden|screenSize">
