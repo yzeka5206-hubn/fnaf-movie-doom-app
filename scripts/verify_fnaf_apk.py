@@ -11,7 +11,9 @@ from pathlib import Path
 BUILD_MARKER = b"FNAF_DIAG_V7_2026"
 REQUIRED_DEX_MARKERS = (
     BUILD_MARKER,
-    b"0.9.2-animation-test",
+    b"0.9.3-optimize-test",
+    b"vid_scale_customwidth",
+    b"fnaf_cull_stats",
     b"FnafMenuActivity",
     b"FnafOptionsActivity",
     b"OriginalMenuActivity",
@@ -49,11 +51,12 @@ ASSET_SHA256 = {
 SHADER_MEMBER = "shaders_gles/glsl/main.vp"
 SKELETAL_SHADER_SHA256 = "72c457c6f39614b02cb5bf024b363a3375a7c79ef5385519b536a71c0bec8ab5"
 NATIVE_BONE_MARKER = b"FNAF skeletal GLES palette:"
+NATIVE_OPT_MARKERS = (b"FNAF_CULL_STATS", b"FNAF_TEXTURE_STATS", b"FNAF_BONE_STATS")
 NATIVE_LIBRARIES = (
     "lib/arm64-v8a/libuzdoom.so",
 )
 NATIVE_SHA256 = {
-    "lib/arm64-v8a/libuzdoom.so": "f31b4a4808226ba4a912ff5d7bfe33ff2adf0f8554300d5f5db9cfa357e5c254",
+    "lib/arm64-v8a/libuzdoom.so": "5e9451e327e0f6d2faf063f14aefbadee9c23a704e4c38b7eaa1d9afacaebdef",
 }
 
 
@@ -73,6 +76,8 @@ def validate_skeletal_resources(archive: zipfile.ZipFile) -> None:
             raise ValueError(f"Missing skeletal native library: {name}") from exc
         if not library.startswith(b"\x7fELF") or NATIVE_BONE_MARKER not in library:
             raise ValueError(f"Native library does not contain skeletal support: {name}")
+        if any(marker not in library for marker in NATIVE_OPT_MARKERS):
+            raise ValueError(f"Native library is missing optimization instrumentation: {name}")
         if name in NATIVE_SHA256 and hashlib.sha256(library).hexdigest() != NATIVE_SHA256[name]:
             raise ValueError(f"Native skeletal library checksum mismatch: {name}")
 

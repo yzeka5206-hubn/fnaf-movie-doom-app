@@ -30,7 +30,7 @@ class ApkVerifierTest(unittest.TestCase):
                 embedded.writestr(verifier.SHADER_MEMBER, b"old shader" if bad_shader else TEST_SHADER)
             archive.writestr("assets/uzdoom.pk3", base.getvalue())
             for name in verifier.NATIVE_LIBRARIES:
-                archive.writestr(name, b"\x7fELF" + (b"old engine" if bad_native else verifier.NATIVE_BONE_MARKER))
+                archive.writestr(name, b"\x7fELF" + (b"old engine" if bad_native else verifier.NATIVE_BONE_MARKER + b"|".join(verifier.NATIVE_OPT_MARKERS)))
             if extra_abi:
                 archive.writestr("lib/armeabi-v7a/libuzdoom.so", b"\x7fELF" + verifier.NATIVE_BONE_MARKER)
             markers = b"|".join(m for m in verifier.REQUIRED_DEX_MARKERS if m != missing_marker)

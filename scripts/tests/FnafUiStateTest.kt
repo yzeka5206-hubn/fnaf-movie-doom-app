@@ -51,6 +51,9 @@ fun main() {
         check(fnafLogicalTouch(10f, 270f, 1200, 540, 1200, 540, 960, 540) == null)
         check(fnafLogicalTouch(600f, 270f, 1200, 540, 600, 270, 960, 540) == (32768 to 32768))
         check(fnafLogicalTouch(Float.NaN, 0f, 1200, 540, 1200, 540, 960, 540) == null)
-        println("PASS session-specific state/ack reader, letterboxed coordinates, truncation and bounded tail")
+        // Xiaomi 11T surface and the explicitly selected scaled buffers.
+        check(fnafLogicalTouch(1158f, 540f, 2316, 1080, 2316, 1080, 1028, 480) == (32768 to 32768))
+        check(fnafLogicalTouch(1158f, 540f, 2316, 1080, 2316, 1080, 1544, 720) == (32768 to 32768))
+        println("PASS session-specific state/ack reader, 480p/720p touch coordinates, letterboxing and bounded tail")
     } finally { dir.deleteRecursively() }
 }

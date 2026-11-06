@@ -995,6 +995,12 @@ class Game : SDLActivity() {
             SDLOpenTouch.fnafCommand("echo $marker")
             SDLOpenTouch.fnafCommand("currentpos")
             if (includeMapAndBinds) {
+                // Read-only: ask the engine for its actual current logical
+                // and physical sizes, rather than only the requested size.
+                SDLOpenTouch.fnafCommand("vid_showcurrentscaling")
+                SDLOpenTouch.fnafCommand("fnaf_cull_stats")
+                SDLOpenTouch.fnafCommand("fnaf_texture_stats")
+                SDLOpenTouch.fnafCommand("fnaf_bone_stats")
                 SDLOpenTouch.fnafCommand("mapinfo")
                 SDLOpenTouch.fnafCommand("bind w")
                 SDLOpenTouch.fnafCommand("bind a")

@@ -99,6 +99,10 @@ object BackupManager {
         val root = runCatching { JSONObject(jsonText) }.getOrNull() ?: return
         val editor = ctx.getSharedPreferences("OPTIONS", Context.MODE_PRIVATE).edit()
         for (key in root.keys()) {
+            // Backups may come from another Android package. Absolute paths in
+            // that package's sandbox cannot be used here and must never replace
+            // the destination's own base/music directories.
+            if (!fnafPortableBackupPreference(key)) continue
             val typed = root.optJSONObject(key) ?: continue
             when (typed.optString("t")) {
                 "b" -> editor.putBoolean(key, typed.optBoolean("v"))

@@ -166,6 +166,7 @@ public class SDLOpenTouch
             args += " +set vid_preferbackend 2 +set vid_fullscreen 1"
                     + " +set vid_defwidth " + renderWidth
                     + " +set vid_defheight " + renderHeight
+                    + FnafLaunchProfile.renderScaleArgs(renderWidth, renderHeight)
                     + " +set vid_maxfps 60"
                     + FnafLaunchProfile.buildArgs(selectedMap, difficulty, streamer, graphics,
                             shaders, halloween, christmas, resolution);

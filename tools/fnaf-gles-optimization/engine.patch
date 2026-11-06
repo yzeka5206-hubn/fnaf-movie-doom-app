@@ -1,0 +1,611 @@
+diff --git a/doom/src/main/jni/engine/gzdoom/src/common/models/fnaf_iqm_cull.h b/doom/src/main/jni/engine/gzdoom/src/common/models/fnaf_iqm_cull.h
+new file mode 100644
+index 0000000..d475cc0
+--- /dev/null
++++ b/doom/src/main/jni/engine/gzdoom/src/common/models/fnaf_iqm_cull.h
+@@ -0,0 +1,112 @@
++// Conservative, render-only IQM frustum rejection for the FNAF mobile build.
++// A weighted vertex is a convex combination of its influencing bones' affine
++// transforms. Therefore each bone's transformed vertex AABB encloses its
++// contribution, including arbitrary runtime bone overrides and interpolation.
++// If *all* boxes are outside one clip plane, no triangle can reach the screen.
++// Invalid/unknown data always fails open (draw the model).
++#pragma once
++
++#include <algorithm>
++#include <cmath>
++#include <limits>
++
++namespace FnafIqmCull
++{
++struct Box
++{
++    float lo[3] = {0, 0, 0};
++    float hi[3] = {0, 0, 0};
++    bool used = false;
++
++    bool Add(float x, float y, float z)
++    {
++        const float p[3] = {x, y, z};
++        for (float v : p) if (!std::isfinite(v)) return false;
++        if (!used)
++        {
++            for (int k = 0; k < 3; ++k) lo[k] = hi[k] = p[k];
++            used = true;
++        }
++        else
++        {
++            for (int k = 0; k < 3; ++k)
++            {
++                lo[k] = std::min(lo[k], p[k]);
++                hi[k] = std::max(hi[k], p[k]);
++            }
++        }
++        return true;
++    }
++};
++
++// Transform each clip-plane equation back into the box's local space, then
++// evaluate its maximum over the AABB. Matrices are column-major, like GLSL.
++// Weighted IQM vertices force position.w=1 after skinning in the shader, so
++// the bone matrix's fourth row must NOT be used in this calculation.
++inline unsigned UpdateMask(unsigned mask, const double plane[4][4], const Box& box,
++                           const float* bone)
++{
++    if (!box.used) return mask;
++    for (int p = 0; p < 4; ++p)
++    {
++        const unsigned bit = 1u << p;
++        if (!(mask & bit)) continue;
++        double q[4];
++        if (bone)
++        {
++            for (int c = 0; c < 3; ++c)
++                q[c] = plane[p][0] * bone[c * 4 + 0] +
++                       plane[p][1] * bone[c * 4 + 1] +
++                       plane[p][2] * bone[c * 4 + 2];
++            q[3] = plane[p][3] + plane[p][0] * bone[12] +
++                   plane[p][1] * bone[13] + plane[p][2] * bone[14];
++        }
++        else for (int c = 0; c < 4; ++c) q[c] = plane[p][c];
++
++        double high = q[3], magnitude = 1.0 + std::abs(q[3]);
++        for (int c = 0; c < 3; ++c)
++        {
++            if (!std::isfinite(q[c]) || !std::isfinite(box.lo[c]) ||
++                !std::isfinite(box.hi[c])) return 0;
++            high += q[c] * (q[c] >= 0 ? box.hi[c] : box.lo[c]);
++            magnitude += std::abs(q[c]) * std::max(std::abs(box.lo[c]), std::abs(box.hi[c]));
++        }
++        if (!std::isfinite(high) || !std::isfinite(magnitude)) return 0;
++        // A generous numerical margin avoids clipping at the edge of the view.
++        if (high >= -0.005 * magnitude) mask &= ~bit;
++    }
++    return mask;
++}
++
++// projectionViewModel and bone matrices use column-major float GLSL layout.
++// Ignore near/far planes: depth-clamp and special passes can alter those.
++inline bool Outside(const double* projectionViewModel, const Box* bones, int boneCount,
++                    const Box& unweighted, const float* palette, int paletteCount)
++{
++    if (!projectionViewModel || !bones || !palette || boneCount <= 0 ||
++        boneCount > 256 || paletteCount < boneCount) return false;
++    for (int i = 0; i < 16; ++i)
++        if (!std::isfinite(projectionViewModel[i])) return false;
++    double planes[4][4];
++    for (int p = 0; p < 4; ++p)
++    {
++        const int row = p / 2;              // x or y
++        const double sign = (p & 1) ? -1.0 : 1.0;
++        for (int c = 0; c < 4; ++c)
++            planes[p][c] = projectionViewModel[c * 4 + 3] +
++                           sign * projectionViewModel[c * 4 + row];
++    }
++    unsigned outside = 15;
++    bool any = unweighted.used;
++    outside = UpdateMask(outside, planes, unweighted, nullptr);
++    if (!outside) return false;
++    for (int i = 0; i < boneCount; ++i)
++    {
++        if (!bones[i].used) continue;
++        any = true;
++        outside = UpdateMask(outside, planes, bones[i], palette + i * 16);
++        if (!outside) return false;
++    }
++    return any && outside != 0;
++}
++}
+diff --git a/doom/src/main/jni/engine/gzdoom/src/common/models/model_iqm.h b/doom/src/main/jni/engine/gzdoom/src/common/models/model_iqm.h
+index 82f2f39..b7a8806 100644
+--- a/doom/src/main/jni/engine/gzdoom/src/common/models/model_iqm.h
++++ b/doom/src/main/jni/engine/gzdoom/src/common/models/model_iqm.h
+@@ -18,6 +18,7 @@
+ 
+ #include <stdint.h>
+ #include "model.h"
++#include "fnaf_iqm_cull.h"
+ #include "vectors.h"
+ #include "matrix.h"
+ #include "common/rendering/i_modelvertexbuffer.h"
+@@ -175,6 +176,11 @@ private:
+ 	TArray<IQMPose> Poses;
+ 	TArray<IQMAnim> Anims;
+ 	TArray<IQMBounds> Bounds;
++	// Bounds for render-only rejection; no simulation state is changed.
++	TArray<FnafIqmCull::Box> fnafBoneBounds;
++	FnafIqmCull::Box fnafUnweightedBounds;
++	bool fnafCullBoundsValid = false;
++	void BuildFnafCullBounds();
+ 	TArray<IQMVertexArray> VertexArrays;
+ 	uint32_t NumVertices = 0;
+ 
+@@ -186,6 +192,9 @@ private:
+ 	TArray<VSMatrix> inversebaseframe;
+ 	TArray<TRS> TRSData;
+ public:
++	bool FnafCullBoundsValid() const { return fnafCullBoundsValid; }
++	const TArray<FnafIqmCull::Box>& FnafBoneBounds() const { return fnafBoneBounds; }
++	const FnafIqmCull::Box& FnafUnweightedBounds() const { return fnafUnweightedBounds; }
+ 	int NumJoints() override { return Joints.SSize(); }
+ 	int FindJoint(FName name) override
+ 	{
+diff --git a/doom/src/main/jni/engine/gzdoom/src/common/models/models_iqm.cpp b/doom/src/main/jni/engine/gzdoom/src/common/models/models_iqm.cpp
+index 9964ee7..8d0cd9d 100644
+--- a/doom/src/main/jni/engine/gzdoom/src/common/models/models_iqm.cpp
++++ b/doom/src/main/jni/engine/gzdoom/src/common/models/models_iqm.cpp
+@@ -297,6 +297,7 @@ bool IQMModel::Load(const char* path, int lumpnum, const char* buffer, int lengt
+ 
+ void IQMModel::LoadGeometry()
+ {
++	fnafCullBoundsValid = false;
+ 	try
+ 	{
+ 		auto lumpdata = fileSystem.ReadFile(mLumpNum);
+@@ -327,12 +328,48 @@ void IQMModel::LoadGeometry()
+ 				LoadBlendWeights(reader, vertexArray);
+ 			}
+ 		}
++		BuildFnafCullBounds();
+ 	}
+ 	catch (IQMReadErrorException)
+ 	{
++		fnafCullBoundsValid = false;
+ 	}
+ }
+ 
++void IQMModel::BuildFnafCullBounds()
++{
++	// No assumptions about actor collision dimensions, static frame bounds,
++	// or animation names. Include every vertex in each bone that affects it.
++	// Weighted positions in the shader are convex combinations of these boxes.
++	fnafCullBoundsValid = false;
++	const int count = Joints.SSize();
++	if (count <= 0 || count > 256 || Vertices.Size() == 0) return;
++	bool pos = false, selectors = false, weights = false;
++	for (const IQMVertexArray& a : VertexArrays)
++	{
++		pos |= a.Type == IQM_POSITION;
++		selectors |= a.Type == IQM_BLENDINDEXES;
++		weights |= a.Type == IQM_BLENDWEIGHTS;
++	}
++	if (!pos || !selectors || !weights) return;
++	fnafBoneBounds.Clear();
++	fnafBoneBounds.Resize(count);
++	fnafUnweightedBounds = {};
++	for (const FModelVertex& v : Vertices)
++	{
++		bool weighted = false;
++		for (int i = 0; i < 4; ++i)
++		{
++			if (!v.boneweight[i]) continue;
++			weighted = true;
++			int joint = v.boneselector[i];
++			if (joint >= count || !fnafBoneBounds[joint].Add(v.x, v.y, v.z)) return;
++		}
++		if (!weighted && !fnafUnweightedBounds.Add(v.x, v.y, v.z)) return;
++	}
++	fnafCullBoundsValid = true;
++}
++
+ void IQMModel::LoadPosition(IQMFileReader& reader, const IQMVertexArray& vertexArray)
+ {
+ 	float lu = 0.0f, lv = 0.0f, lindex = -1.0f;
+diff --git a/doom/src/main/jni/engine/gzdoom/src/common/rendering/gles/fnaf_texture_resize.h b/doom/src/main/jni/engine/gzdoom/src/common/rendering/gles/fnaf_texture_resize.h
+new file mode 100644
+index 0000000..85a4d22
+--- /dev/null
++++ b/doom/src/main/jni/engine/gzdoom/src/common/rendering/gles/fnaf_texture_resize.h
+@@ -0,0 +1,72 @@
++// Bounded, alpha-aware downsampling for ordinary four-channel game images.
++// This never touches render targets, indexed textures, fonts, or menus.
++#pragma once
++#include <cstddef>
++#include <cstdint>
++
++namespace FnafTextureResize
++{
++inline char LowerAscii(char c) { return c >= 'A' && c <= 'Z' ? char(c + ('a' - 'A')) : c; }
++inline bool StartsWith(const char* value, const char* prefix)
++{
++    if (!value) return false;
++    while (*prefix)
++    {
++        if (!*value || LowerAscii(*value++) != *prefix++) return false;
++    }
++    return true;
++}
++inline bool IsVisualAsset(const char* path)
++{
++    return StartsWith(path, "characters/") || StartsWith(path, "props/") ||
++           StartsWith(path, "textures/");
++}
++inline void Dimensions(int width, int height, int cap, int& outWidth, int& outHeight)
++{
++    outWidth = width; outHeight = height;
++    if (width <= 0 || height <= 0 || cap < 256) return;
++    int longest = width > height ? width : height;
++    if (longest <= cap) return;
++    outWidth = int((int64_t(width) * cap) / longest);
++    outHeight = int((int64_t(height) * cap) / longest);
++    if (outWidth < 1) outWidth = 1;
++    if (outHeight < 1) outHeight = 1;
++}
++
++// Input and output are packed BGRA/RGBA with straight alpha. Weighted colors
++// prevent transparent black texels from leaving a fringe. Empty boxes stay
++// transparent black and never divide by zero.
++inline bool Box(const uint8_t* src, int width, int height,
++                uint8_t* dst, int outWidth, int outHeight)
++{
++    if (!src || !dst || width <= 0 || height <= 0 || outWidth <= 0 || outHeight <= 0 ||
++        outWidth > width || outHeight > height) return false;
++    for (int y = 0; y < outHeight; ++y)
++    {
++        int y0 = int((int64_t(y) * height) / outHeight);
++        int y1 = int((int64_t(y + 1) * height) / outHeight);
++        for (int x = 0; x < outWidth; ++x)
++        {
++            int x0 = int((int64_t(x) * width) / outWidth);
++            int x1 = int((int64_t(x + 1) * width) / outWidth);
++            uint64_t sum[4] = {0, 0, 0, 0}, count = 0;
++            for (int sy = y0; sy < y1; ++sy)
++                for (int sx = x0; sx < x1; ++sx)
++                {
++                    const uint8_t* p = src + (size_t(sy) * width + sx) * 4;
++                    const unsigned a = p[3];
++                    sum[0] += uint64_t(p[0]) * a;
++                    sum[1] += uint64_t(p[1]) * a;
++                    sum[2] += uint64_t(p[2]) * a;
++                    sum[3] += a;
++                    ++count;
++                }
++            uint8_t* out = dst + (size_t(y) * outWidth + x) * 4;
++            for (int c = 0; c < 3; ++c)
++                out[c] = sum[3] ? uint8_t((sum[c] + sum[3] / 2) / sum[3]) : 0;
++            out[3] = count ? uint8_t((sum[3] + count / 2) / count) : 0;
++        }
++    }
++    return true;
++}
++}
+diff --git a/doom/src/main/jni/engine/gzdoom/src/common/rendering/gles/gles_hwtexture.cpp b/doom/src/main/jni/engine/gzdoom/src/common/rendering/gles/gles_hwtexture.cpp
+index 5c23ef4..bc1e4b9 100644
+--- a/doom/src/main/jni/engine/gzdoom/src/common/rendering/gles/gles_hwtexture.cpp
++++ b/doom/src/main/jni/engine/gzdoom/src/common/rendering/gles/gles_hwtexture.cpp
+@@ -31,6 +31,20 @@
+ #include "gles_samplers.h"
+ #include "gles_renderstate.h"
+ #include "gles_hwtexture.h"
++#include "fnaf_texture_resize.h"
++#include "filesystem.h"
++#include "c_dispatch.h"
++#include "printf.h"
++
++// 0 keeps upstream behavior. The FNAF low profile opts into a 1024px cap for
++// world props/skins only, not camera canvases, indexed images or menus.
++CVAR(Int, fnaf_max_image_size, 0, 0)
++static uint64_t fnaf_resized_images = 0;
++CCMD(fnaf_texture_stats)
++{
++	Printf("FNAF_TEXTURE_STATS resized=%llu cap=%d\n",
++		static_cast<unsigned long long>(fnaf_resized_images), int(fnaf_max_image_size));
++}
+ 
+ namespace OpenGLESRenderer
+ {
+@@ -64,6 +78,11 @@ unsigned int FHardwareTexture::lastbound[FHardwareTexture::MAX_TEXTURES];
+ //===========================================================================
+ 
+ unsigned int FHardwareTexture::CreateTexture(unsigned char * buffer, int w, int h, int texunit, bool mipmap, const char *name)
++{
++	return CreateTextureLimited(buffer, w, h, texunit, mipmap, name, false);
++}
++
++unsigned int FHardwareTexture::CreateTextureLimited(unsigned char * buffer, int w, int h, int texunit, bool mipmap, const char *name, bool fnafLimitImage)
+ {
+ 	int rh,rw;
+ 	int texformat = GL_RGBA;// TexFormat[gl_texture_format];
+@@ -89,6 +108,14 @@ unsigned int FHardwareTexture::CreateTexture(unsigned char * buffer, int w, int
+ 
+ 	rw = GetTexDimension(w);
+ 	rh = GetTexDimension(h);
++	bool fnafResize = false;
++	if (buffer && fnafLimitImage && glTextureBytes == 4 && fnaf_max_image_size >= 256)
++	{
++		int cap = std::min(int(fnaf_max_image_size), gles.max_texturesize);
++		int fw, fh;
++		FnafTextureResize::Dimensions(w, h, cap, fw, fh);
++		if (fw < w || fh < h) { rw = fw; rh = fh; fnafResize = true; }
++	}
+ 
+ 	if (!buffer)
+ 	{
+@@ -106,10 +133,20 @@ unsigned int FHardwareTexture::CreateTexture(unsigned char * buffer, int w, int
+ 			unsigned char * scaledbuffer=(unsigned char *)calloc(4,rw * (rh+1));
+ 			if (scaledbuffer)
+ 			{
+-				Resize(w, h, rw, rh, buffer, scaledbuffer);
++				if (fnafResize)
++				{
++					FnafTextureResize::Box(buffer, w, h, scaledbuffer, rw, rh);
++					++fnaf_resized_images;
++				}
++				else Resize(w, h, rw, rh, buffer, scaledbuffer);
+ 				deletebuffer=true;
+ 				buffer=scaledbuffer;
+ 			}
++			else
++			{
++				// Do not interpret a full-size source using a shorter row stride.
++				rw = w; rh = h;
++			}
+ 		}
+ 
+ 
+@@ -322,7 +359,12 @@ bool FHardwareTexture::BindOrCreate(FTexture *tex, int texunit, int clampmode, i
+ 			w = tex->GetWidth();
+ 			h = tex->GetHeight();
+ 		}
+-		if (!CreateTexture(texbuffer.mBuffer, w, h, texunit, needmipmap, "FHardwareTexture.BindOrCreate"))
++		const int source = tex->GetSourceLump();
++		const char* path = source >= 0 ? fileSystem.GetFileFullName(source) : nullptr;
++		const bool ordinaryGameImage = !tex->isHardwareCanvas() && glTextureBytes == 4 &&
++			texbuffer.mBuffer && FnafTextureResize::IsVisualAsset(path);
++		if (!CreateTextureLimited(texbuffer.mBuffer, w, h, texunit, needmipmap,
++			"FHardwareTexture.BindOrCreate", ordinaryGameImage))
+ 		{
+ 			// could not create texture
+ 			return false;
+diff --git a/doom/src/main/jni/engine/gzdoom/src/common/rendering/gles/gles_hwtexture.h b/doom/src/main/jni/engine/gzdoom/src/common/rendering/gles/gles_hwtexture.h
+index a72a747..b04e1bc 100644
+--- a/doom/src/main/jni/engine/gzdoom/src/common/rendering/gles/gles_hwtexture.h
++++ b/doom/src/main/jni/engine/gzdoom/src/common/rendering/gles/gles_hwtexture.h
+@@ -94,7 +94,10 @@ public:
+ 	void AllocateBuffer(int w, int h, int texelsize);
+ 	uint8_t* MapBuffer();
+ 
+-	unsigned int CreateTexture(unsigned char* buffer, int w, int h, int texunit, bool mipmap, const char* name);
++	// Preserve the engine-wide six-argument virtual interface for canvases and
++	// framebuffer wipes; only BindOrCreate calls the selective image overload.
++	unsigned int CreateTexture(unsigned char* buffer, int w, int h, int texunit, bool mipmap, const char* name) override;
++	unsigned int CreateTextureLimited(unsigned char* buffer, int w, int h, int texunit, bool mipmap, const char* name, bool fnafLimitImage);
+ 	unsigned int GetTextureHandle()
+ 	{
+ 		return glTexID;
+diff --git a/doom/src/main/jni/engine/gzdoom/src/common/rendering/gles/gles_renderstate.cpp b/doom/src/main/jni/engine/gzdoom/src/common/rendering/gles/gles_renderstate.cpp
+index bcb09a8..c833317 100644
+--- a/doom/src/main/jni/engine/gzdoom/src/common/rendering/gles/gles_renderstate.cpp
++++ b/doom/src/main/jni/engine/gzdoom/src/common/rendering/gles/gles_renderstate.cpp
+@@ -31,6 +31,16 @@
+ 
+ #include "hw_clock.h"
+ #include "printf.h"
++#include "c_dispatch.h"
++#include <cstring>
++
++static uint64_t fnaf_bone_uploads = 0, fnaf_bone_reuses = 0;
++CCMD(fnaf_bone_stats)
++{
++	Printf("FNAF_BONE_STATS uploaded=%llu reused=%llu\n",
++		static_cast<unsigned long long>(fnaf_bone_uploads),
++		static_cast<unsigned long long>(fnaf_bone_reuses));
++}
+ 
+ #include "hwrenderer/data/hw_viewpointbuffer.h"
+ 
+@@ -61,6 +71,7 @@ void FGLRenderState::Reset()
+ 		glDeleteTextures(1, &mFnafBoneTexture);
+ 		mFnafBoneTexture = 0;
+ 	}
++	mFnafLastBoneCount = -1;
+ 	mVertexBuffer = mCurrentVertexBuffer = nullptr;
+ 	mGlossiness = 0.0f;
+ 	mSpecularLevel = 0.0f;
+@@ -372,9 +383,18 @@ bool FGLRenderState::ApplyShader()
+ 				// GL_RGBA32F is core in ES3; the bundled GLES2 header omits its name.
+ 				glTexImage2D(GL_TEXTURE_2D, 0, 0x8814, 4, FNAF_BONE_PALETTE_ROWS,
+ 					0, GL_RGBA, GL_FLOAT, nullptr);
++				mFnafLastBoneCount = -1;
+ 			}
+ 			else glBindTexture(GL_TEXTURE_2D, mFnafBoneTexture);
+-			glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 4, count, GL_RGBA, GL_FLOAT, bones);
++			const size_t bytes = size_t(count) * 16 * sizeof(float);
++			if (mFnafLastBoneCount != count || std::memcmp(mFnafLastBones, bones, bytes) != 0)
++			{
++				glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 4, count, GL_RGBA, GL_FLOAT, bones);
++				std::memcpy(mFnafLastBones, bones, bytes);
++				mFnafLastBoneCount = count;
++				++fnaf_bone_uploads;
++			}
++			else ++fnaf_bone_reuses;
+ 			glActiveTexture(previousTexture);
+ 			glUniform1i(activeShader->cur->fnaf_bone_texture_index, FNAF_BONE_TEXTURE_UNIT);
+ 			activeShader->cur->muBoneIndexBase.Set(0);
+diff --git a/doom/src/main/jni/engine/gzdoom/src/common/rendering/gles/gles_renderstate.h b/doom/src/main/jni/engine/gzdoom/src/common/rendering/gles/gles_renderstate.h
+index a53f741..2838647 100644
+--- a/doom/src/main/jni/engine/gzdoom/src/common/rendering/gles/gles_renderstate.h
++++ b/doom/src/main/jni/engine/gzdoom/src/common/rendering/gles/gles_renderstate.h
+@@ -63,6 +63,10 @@ class FGLRenderState final : public FRenderState
+ 	size_t mLastMappedLightIndex = SIZE_MAX;
+ 	size_t mLastMappedBoneIndexBase = SIZE_MAX;
+ 	unsigned int mFnafBoneTexture = 0; // lazily created in the current GL context
++	// Compare actual palette bytes, not actor IDs or frame numbers: poses can
++	// change on any render pass and buffer indices are reused every frame.
++	float mFnafLastBones[16 * 256] = {};
++	int mFnafLastBoneCount = -1;
+ 
+ 	IVertexBuffer *mCurrentVertexBuffer;
+ 	int mCurrentVertexOffsets[2];	// one per binding point
+diff --git a/doom/src/main/jni/engine/gzdoom/src/rendering/hwrenderer/hw_models.cpp b/doom/src/main/jni/engine/gzdoom/src/rendering/hwrenderer/hw_models.cpp
+index 75cba65..cd1026f 100644
+--- a/doom/src/main/jni/engine/gzdoom/src/rendering/hwrenderer/hw_models.cpp
++++ b/doom/src/main/jni/engine/gzdoom/src/rendering/hwrenderer/hw_models.cpp
+@@ -32,6 +32,21 @@
+ #include "hwrenderer/scene/hw_portal.h"
+ #include "hw_bonebuffer.h"
+ #include "hw_models.h"
++#include "model_iqm.h"
++#include "c_dispatch.h"
++#include <cstdint>
++
++// DrawScene restores this around nested portals. Cameras, mirrors, sky portals
++// and HUD weapon models bypass the extra test entirely.
++extern bool fnaf_cull_main_scene;
++CVAR(Bool, fnaf_iqm_cull, false, 0)
++static uint64_t fnaf_cull_tested = 0, fnaf_cull_rejected = 0;
++CCMD(fnaf_cull_stats)
++{
++	Printf("FNAF_CULL_STATS tested=%llu rejected=%llu\n",
++		static_cast<unsigned long long>(fnaf_cull_tested),
++		static_cast<unsigned long long>(fnaf_cull_rejected));
++}
+ 
+ CVAR(Bool, gl_light_models, true, CVAR_ARCHIVE)
+ 
+@@ -44,6 +59,10 @@ VSMatrix FHWModelRenderer::GetViewToWorldMatrix()
+ 
+ void FHWModelRenderer::BeginDrawModel(FRenderStyle style, int smf_flags, const VSMatrix &objectToWorldMatrix, bool mirrored)
+ {
++	fnafCullWorld = fnaf_cull_main_scene && di && !di->outer &&
++		!di->mCurrentPortal && !di->Viewpoint.bDoOrtho;
++	fnafSkipDraw = false;
++	fnafInterpolation = 0.0;
+ 	state.SetDepthFunc(DF_LEqual);
+ 	state.EnableTexture(true);
+ 	// [BB] In case the model should be rendered translucent, do back face culling.
+@@ -70,6 +89,8 @@ void FHWModelRenderer::EndDrawModel(FRenderStyle style, int smf_flags)
+ 
+ void FHWModelRenderer::BeginDrawHUDModel(FRenderStyle style, const VSMatrix &objectToWorldMatrix, bool mirrored, int smf_flags)
+ {
++	fnafCullWorld = false;
++	fnafSkipDraw = false;
+ 	state.SetDepthFunc(DF_LEqual);
+ 	state.SetDepthClamp(true);
+ 
+@@ -102,22 +123,26 @@ IModelVertexBuffer *FHWModelRenderer::CreateVertexBuffer(bool needindex, bool si
+ 
+ void FHWModelRenderer::SetInterpolation(double inter)
+ {
++	fnafInterpolation = inter;
+ 	state.SetInterpolationFactor((float)inter);
+ }
+ 
+ void FHWModelRenderer::SetMaterial(FGameTexture *skin, bool clampNoFilter, FTranslationID translation)
+ {
++	if (fnafSkipDraw) return;
+ 	state.SetMaterial(skin, UF_Skin, 0, clampNoFilter ? CLAMP_NOFILTER : CLAMP_NONE, translation, -1);
+ 	state.SetLightIndex(modellightindex);
+ }
+ 
+ void FHWModelRenderer::DrawArrays(int start, int count)
+ {
++	if (fnafSkipDraw) return;
+ 	state.Draw(DT_Triangles, start, count);
+ }
+ 
+ void FHWModelRenderer::DrawElements(int numIndices, size_t offset)
+ {
++	if (fnafSkipDraw) return;
+ 	state.DrawIndexed(DT_Triangles, int(offset / sizeof(unsigned int)), numIndices);
+ }
+ 
+@@ -130,7 +155,35 @@ void FHWModelRenderer::DrawElements(int numIndices, size_t offset)
+ void FHWModelRenderer::SetupFrame(FModel *model, unsigned int frame1, unsigned int frame2, unsigned int size, int boneStartIndex)
+ {
+ 	auto mdbuff = static_cast<FModelVertexBuffer*>(model->GetVertexBuffer(GetType()));
+-	//boneIndexBase = boneStartIndex;//boneStartIndex >= 0 ? boneStartIndex : screen->mBones->UploadBones(bones);
++	fnafSkipDraw = false;
++	// Run *after* AnimateBones, CalcModelFrame and UploadBones. Thus invisible
++	// actors keep their normal AI, sound and pose evaluation. We only avoid
++	// material loading and GPU draws if all geometry is outside one plane.
++	if (fnaf_iqm_cull && fnafCullWorld && fnafInterpolation == 0.0 &&
++		boneStartIndex >= 0 && screen && screen->mBones)
++	{
++		auto iqm = dynamic_cast<IQMModel*>(model);
++		if (iqm && iqm->FnafCullBoundsValid())
++		{
++			auto buffer = screen->mBones->GetBuffer();
++			const int n = iqm->FnafBoneBounds().SSize();
++			const int cap = buffer ? static_cast<int>(buffer->Size() / (16 * sizeof(float))) : 0;
++			const int used = std::min(screen->mBones->GetCurrentIndex(), cap);
++			if (buffer && buffer->Memory() && n > 0 && boneStartIndex <= used && n <= used - boneStartIndex)
++			{
++				VSMatrix pvm = di->VPUniforms.mProjectionMatrix;
++				pvm.multMatrix(di->VPUniforms.mViewMatrix);
++				pvm.multMatrix(state.mModelMatrix);
++				double matrix[16];
++				for (int i = 0; i < 16; ++i) matrix[i] = pvm.get()[i];
++				const float* palette = static_cast<const float*>(buffer->Memory()) + boneStartIndex * 16;
++				++fnaf_cull_tested;
++				fnafSkipDraw = FnafIqmCull::Outside(matrix, iqm->FnafBoneBounds().Data(), n,
++					iqm->FnafUnweightedBounds(), palette, used - boneStartIndex);
++				if (fnafSkipDraw) ++fnaf_cull_rejected;
++			}
++		}
++	}
+ 	state.SetBoneIndexBase(boneStartIndex);
+ 	if (mdbuff)
+ 	{
+diff --git a/doom/src/main/jni/engine/gzdoom/src/rendering/hwrenderer/hw_models.h b/doom/src/main/jni/engine/gzdoom/src/rendering/hwrenderer/hw_models.h
+index 9cefb50..d8c2af0 100644
+--- a/doom/src/main/jni/engine/gzdoom/src/rendering/hwrenderer/hw_models.h
++++ b/doom/src/main/jni/engine/gzdoom/src/rendering/hwrenderer/hw_models.h
+@@ -35,6 +35,10 @@ class FHWModelRenderer : public FModelRenderer
+ 	friend class FModelVertexBuffer;
+ 	int modellightindex = -1;
+ 	int boneIndexBase = -1;
++	// This instance is used for one model; no gameplay flags are changed.
++	bool fnafCullWorld = false;
++	bool fnafSkipDraw = false;
++	double fnafInterpolation = 0.0;
+ 	HWDrawInfo *di;
+ 	FRenderState &state;
+ public:
+diff --git a/doom/src/main/jni/engine/gzdoom/src/rendering/hwrenderer/scene/hw_drawinfo.cpp b/doom/src/main/jni/engine/gzdoom/src/rendering/hwrenderer/scene/hw_drawinfo.cpp
+index dd34a6c..a2c7d2d 100644
+--- a/doom/src/main/jni/engine/gzdoom/src/rendering/hwrenderer/scene/hw_drawinfo.cpp
++++ b/doom/src/main/jni/engine/gzdoom/src/rendering/hwrenderer/scene/hw_drawinfo.cpp
+@@ -986,8 +986,14 @@ void HWDrawInfo::Set3DViewport(FRenderState &state)
+ //
+ //-----------------------------------------------------------------------------
+ 
++// Scenes are rendered sequentially. Do not apply the FNAF main-view test to
++// cameras or recursive portal/mirror/sky passes; restore it after recursion.
++bool fnaf_cull_main_scene = false;
++
+ void HWDrawInfo::DrawScene(int drawmode)
+ {
++	const bool previousFnafCullScene = fnaf_cull_main_scene;
++	fnaf_cull_main_scene = drawmode == DM_MAINVIEW;
+ 	static int recursion = 0;
+ 	static int ssao_portals_available = 0;
+ 	auto& vp = Viewpoint;
+@@ -1041,6 +1047,7 @@ void HWDrawInfo::DrawScene(int drawmode)
+ 	portalState.EndFrame(this, RenderState);
+ 	recursion--;
+ 	RenderTranslucent(RenderState);
++	fnaf_cull_main_scene = previousFnafCullScene;
+ }
+ 
+ 

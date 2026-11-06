@@ -4,6 +4,12 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
 }
 
+// Release the optimized package with a stable key held only in CI secrets.
+// Local unsigned/test builds may use Android's normal debug key; CI refuses
+// to publish unless these values are present and the certificate matches.
+val fnafStableStore = System.getenv("FNAF_SIGNING_STORE")
+val fnafStablePassword = System.getenv("FNAF_SIGNING_PASSWORD")
+
 android {
     namespace = "com.msa.freedoom"
     compileSdk = 36
@@ -12,8 +18,8 @@ android {
         applicationId = "com.fnaf.moviedoom"
         minSdk = 33
         targetSdk = 36
-        versionCode = 11
-        versionName = "0.9.2-animation-test"
+        versionCode = 12
+        versionName = "0.9.3-optimize-test"
         manifestPlaceholders["fnafAppLabel"] = "FNAF Movie Doom"
 
         // This animation-test candidate targets the Xiaomi 11T (ARM64).
@@ -23,6 +29,17 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    signingConfigs {
+        if (!fnafStableStore.isNullOrBlank() && !fnafStablePassword.isNullOrBlank()) {
+            create("fnafStable") {
+                storeFile = file(fnafStableStore)
+                storePassword = fnafStablePassword
+                keyAlias = "fnaf"
+                keyPassword = fnafStablePassword
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
@@ -30,10 +47,14 @@ android {
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
         debug {
-            // Different CI debug keys cannot upgrade the previously installed
-            // menu build. Keep both previous apps and their data untouched.
-            applicationIdSuffix = ".animationtest"
-            manifestPlaceholders["fnafAppLabel"] = "FNAF Animasyon Testi"
+            // The previous animation-test signing key is unavailable. Never
+            // uninstall it: a separate package preserves all old data. This new
+            // package uses the stable CI key for subsequent updates.
+            applicationIdSuffix = ".optimized"
+            manifestPlaceholders["fnafAppLabel"] = "FNAF Optimize Testi"
+            if (!fnafStableStore.isNullOrBlank() && !fnafStablePassword.isNullOrBlank()) {
+                signingConfig = signingConfigs.getByName("fnafStable")
+            }
         }
     }
 

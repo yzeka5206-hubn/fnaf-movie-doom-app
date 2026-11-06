@@ -25,6 +25,20 @@ public final class FnafLaunchProfile {
         return new int[]{Math.max(2, width), Math.max(2, height)};
     }
 
+    /**
+     * The SDL surface is normally the physical display size on Android.
+     * vid_defwidth/height alone do not control UZDoom's current render buffer;
+     * explicitly select its custom scaling mode and its logical dimensions.
+     */
+    public static String renderScaleArgs(int width, int height) {
+        if (width < 2 || height < 2 || (width & 1) != 0 || (height & 1) != 0)
+            throw new IllegalArgumentException("Invalid render size");
+        return " +set vid_scalemode 5" +
+                " +set vid_scale_customwidth " + width +
+                " +set vid_scale_customheight " + height +
+                " +set vid_scale_custompixelaspect 1";
+    }
+
     public static String buildArgs(String map, int difficulty, int streamer, int graphics,
                                    int shaders, int halloween, int christmas, int height) {
         if (!isValid(map, difficulty, streamer, graphics, shaders, halloween, christmas, height))
@@ -48,6 +62,13 @@ public final class FnafLaunchProfile {
                 " +set CL_Bloom " + bloom[graphics] +
                 " +set CL_Lens " + lens[graphics] +
                 " +set vid_scalefactor 1" +
+                // Decode and upload visual assets when needed; leave sound
+                // precaching and all gameplay simulation untouched.
+                " +set gl_precache 0" +
+                " +set fnaf_iqm_cull 1" +
+                // Only the lowest profile caps ordinary world/character images;
+                // camera canvases, fonts and original menus are excluded.
+                " +set fnaf_max_image_size " + (graphics == 0 ? 1024 : 0) +
                 " +set gl_texture_filter " + tex[graphics] +
                 " +set gl_light_shadowmap " + (graphics == 0 ? 0 : 1) +
                 " +set gl_shadowmap_quality " + shadowMap[graphics] +

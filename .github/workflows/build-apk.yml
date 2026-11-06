@@ -25,20 +25,42 @@ jobs:
           yes | "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
           "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" "platforms;android-36" "build-tools;36.0.0"
 
-      - name: Grant execute permission
-        run: chmod +x ./gradlew
+      - name: Host optimization regression tests
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/fnaf-tests"
+          javac -encoding UTF-8 -d "$RUNNER_TEMP/fnaf-tests" \
+            doom/src/main/java/com/msa/freedoom/FnafLaunchProfile.java scripts/tests/FnafLaunchProfileTest.java
+          java -cp "$RUNNER_TEMP/fnaf-tests" FnafLaunchProfileTest
+          g++ -std=c++17 -O2 -Wall -Wextra -Werror tools/fnaf-gles-optimization/host_test.cpp -o "$RUNNER_TEMP/fnaf-tests/optimization"
+          "$RUNNER_TEMP/fnaf-tests/optimization"
 
-      - name: Build debug APK
-        run: ./gradlew :doom:assembleDebug --no-daemon --stacktrace
+      - name: Prepare stable signing key
+        env:
+          KEYSTORE_B64: ${{ secrets.FNAF_ANDROID_KEYSTORE_B64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.FNAF_ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          test -n "$KEYSTORE_B64" && test -n "$KEYSTORE_PASSWORD"
+          umask 077
+          printf '%s' "$KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/fnaf-signing.p12"
+          test -s "$RUNNER_TEMP/fnaf-signing.p12"
+          echo "FNAF_SIGNING_STORE=$RUNNER_TEMP/fnaf-signing.p12" >> "$GITHUB_ENV"
 
-      - name: Verify animation-test APK
+      - name: Build debug APK with stable optimized-package signature
+        env:
+          FNAF_SIGNING_PASSWORD: ${{ secrets.FNAF_ANDROID_KEYSTORE_PASSWORD }}
+        run: chmod +x ./gradlew && ./gradlew :doom:assembleDebug --no-daemon --stacktrace
+
+      - name: Verify optimized-test APK
         run: |
           python3 -m unittest discover -s scripts/tests -p test_verify_fnaf_apk.py -v
           python3 scripts/verify_fnaf_apk.py doom/build/outputs/apk/debug
           apk=$(find doom/build/outputs/apk/debug -maxdepth 1 -name '*.apk' -type f -print -quit)
           tools="$ANDROID_SDK_ROOT/build-tools/36.0.0"
-          "$tools/apksigner" verify --verbose --print-certs "$apk"
-          "$tools/aapt" dump badging "$apk" | grep -F "package: name='com.fnaf.moviedoom.animationtest'"
+          "$tools/apksigner" verify --verbose --print-certs "$apk" | tee "$RUNNER_TEMP/apk-cert.txt"
+          grep -F '7ffca05129f461b68852130392b01a10a041c2b785f5b4413bb944ac933569e6' "$RUNNER_TEMP/apk-cert.txt"
+          "$tools/aapt" dump badging "$apk" | grep -F "package: name='com.fnaf.moviedoom.optimized'"
           "$tools/zipalign" -c -P 16 -v 4 "$apk" > /dev/null
 
       - name: Upload APK and checksum
