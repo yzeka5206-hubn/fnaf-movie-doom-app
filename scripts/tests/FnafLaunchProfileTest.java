@@ -24,12 +24,15 @@ public final class FnafLaunchProfileTest {
         int n = 0;
         for (String map : new String[]{"OUTSIDE", "NIGHT1", "NIGHT2", "NIGHT3", "NIGHT4", "NIGHT5"})
             for (int difficulty=0; difficulty<3; difficulty++) for (int streamer=0; streamer<2; streamer++)
-                for (int graphics=0; graphics<5; graphics++) for (int height : new int[]{480,720}) {
+                for (int graphics=0; graphics<5; graphics++) for (int height : new int[]{480,720})
+                    for (boolean outsideBlack : new boolean[]{false, true}) {
                     check(FnafLaunchProfile.isValid(map,difficulty,streamer,graphics,0,0,0,height), "valid rejected");
-                    String args = FnafLaunchProfile.buildArgs(map,difficulty,streamer,graphics,0,0,0,height);
+                    String args = FnafLaunchProfile.buildArgs(map,difficulty,streamer,graphics,0,0,0,height,outsideBlack);
                     check(args.contains("+set vid_scalefactor 1"), args);
                     check(args.contains("+set gl_precache 0"), args);
                     check(args.contains("+set fnaf_iqm_cull 1"), args);
+                    check(args.contains("+set fnaf_outside_black " + (outsideBlack ? 1 : 0) + " "), args);
+                    check(args.indexOf("+set fnaf_outside_black") < args.indexOf("+map "), args);
                     check(args.contains("+set fnaf_max_image_size " + (graphics == 0 ? 1024 : 0) + " "), args);
                     check(args.contains("+map " + map), args);
                     check(!args.contains("-host") && !args.contains("-join"), args);

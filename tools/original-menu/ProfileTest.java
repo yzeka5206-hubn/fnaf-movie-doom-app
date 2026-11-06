@@ -4,7 +4,7 @@ public class ProfileTest {
         for (String map : new String[]{"OUTSIDE","NIGHT1","NIGHT2","NIGHT3","NIGHT4","NIGHT5"})
             for (int d=0; d<3; d++) for (int s=0; s<2; s++) for (int g=0; g<5; g++) for (int h : new int[]{480,720}) {
                 if (!FnafLaunchProfile.isValid(map,d,s,g,0,0,0,h)) throw new AssertionError("valid rejected");
-                String result=FnafLaunchProfile.buildArgs(map,d,s,g,0,0,0,h);
+                String result=FnafLaunchProfile.buildArgs(map,d,s,g,0,0,0,h,false);
                 if (!result.contains("+map " + map) || !result.contains("+set sv_difficulty " + d) ||
                     !result.contains("+set sv_streamermode " + s) || !result.contains("+set CL_GraphicPreset " + g))
                     throw new AssertionError(result);

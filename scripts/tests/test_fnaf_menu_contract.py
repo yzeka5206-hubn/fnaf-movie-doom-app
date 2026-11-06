@@ -46,6 +46,13 @@ class MenuContractTest(unittest.TestCase):
         self.assertIn('FnafOptionsActivity::class.java', original)
         self.assertIn('480', original)
         self.assertIn('720', original)
+        self.assertIn('DIŞ: SİYAH', original)
+        self.assertIn('DIŞ: NORMAL', original)
+        self.assertIn('.putBoolean("outside_black", outsideBlack).commit()', original)
+        self.assertIn('getBoolean("outside_black", true)', original)
+        selection = (JAVA / 'FnafMenuSelection.kt').read_text()
+        self.assertIn('intent.putExtra("fnaf_outside_black", outsideBlack)', selection)
+        self.assertIn('intent.getBooleanExtra("fnaf_outside_black", false)', selection)
 
     def test_uses_existing_v7_launch_and_backup_without_file_picker(self):
         menu = (JAVA / 'FnafMenuActivity.kt').read_text()

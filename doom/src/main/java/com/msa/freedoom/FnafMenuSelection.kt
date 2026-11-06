@@ -12,6 +12,7 @@ data class FnafMenuSelection(
     val halloween: Int,
     val christmas: Int,
     val resolution: Int,
+    val outsideBlack: Boolean,
 ) {
     fun isValid(): Boolean = FnafLaunchProfile.isValid(
         map, difficulty, streamer, graphics, shaders, halloween, christmas, resolution,
@@ -28,6 +29,7 @@ data class FnafMenuSelection(
         intent.putExtra("fnaf_halloween", halloween)
         intent.putExtra("fnaf_christmas", christmas)
         intent.putExtra("fnaf_resolution", resolution)
+        intent.putExtra("fnaf_outside_black", outsideBlack)
     }
 
     companion object {
@@ -43,6 +45,7 @@ data class FnafMenuSelection(
                 intent.getIntExtra("fnaf_halloween", -1),
                 intent.getIntExtra("fnaf_christmas", -1),
                 intent.getIntExtra("fnaf_resolution", -1),
+                intent.getBooleanExtra("fnaf_outside_black", false),
             )
             return selected.takeIf { it.isValid() }
         }

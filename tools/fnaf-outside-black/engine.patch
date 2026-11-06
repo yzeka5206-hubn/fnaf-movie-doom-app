@@ -1,0 +1,154 @@
+diff --git a/doom/src/main/jni/engine/gzdoom/src/rendering/hwrenderer/scene/hw_drawinfo.cpp b/doom/src/main/jni/engine/gzdoom/src/rendering/hwrenderer/scene/hw_drawinfo.cpp
+index a2c7d2d..a0a7709 100644
+--- a/doom/src/main/jni/engine/gzdoom/src/rendering/hwrenderer/scene/hw_drawinfo.cpp
++++ b/doom/src/main/jni/engine/gzdoom/src/rendering/hwrenderer/scene/hw_drawinfo.cpp
+@@ -38,6 +38,10 @@
+ #include "a_corona.h"
+ #include "texturemanager.h"
+ #include "actorinlines.h"
++#include "fnaf_outside_black.h"
++
++EXTERN_CVAR(Bool, fnaf_outside_black)
++extern unsigned long long fnaf_outside_views_skipped;
+ #include "g_levellocals.h"
+ 
+ EXTERN_CVAR(Float, r_visibility)
+@@ -1061,6 +1065,24 @@ void HWDrawInfo::ProcessScene(bool toscreen)
+ {
+ 	portalState.BeginScene();
+ 
++    // Cameras and the player may themselves enter the separate outdoor
++    // geometry. Clear this view instead of traversing/drawing the world;
++    // the normal HUD and simulation run outside ProcessScene as usual.
++    const auto &viewpos = (Viewpoint.bDoOob || Viewpoint.bDoOrtho) ? Viewpoint.OffPos : Viewpoint.Pos;
++    if (fnaf_outside_black && Level &&
++        FnafOutsideBlack::ExteriorView(Level->MapName.GetChars(), viewpos.X, viewpos.Y))
++    {
++        ++fnaf_outside_views_skipped;
++        auto &renderState = *screen->RenderState();
++        float oldClear[4];
++        memcpy(oldClear, screen->mSceneClearColor, sizeof(oldClear));
++        screen->mSceneClearColor[0] = screen->mSceneClearColor[1] = screen->mSceneClearColor[2] = 0.f;
++        screen->mSceneClearColor[3] = 1.f;
++        renderState.Clear(CT_Color);
++        memcpy(screen->mSceneClearColor, oldClear, sizeof(oldClear));
++        return;
++    }
++
+ 	int mapsection = Level->PointInRenderSubsector(Viewpoint.Pos)->mapsection;
+ 	if (Viewpoint.bDoOob || Viewpoint.bDoOrtho)
+ 		mapsection = Level->PointInRenderSubsector(Viewpoint.OffPos)->mapsection;
+diff --git a/doom/src/main/jni/engine/gzdoom/src/rendering/hwrenderer/scene/hw_portal.cpp b/doom/src/main/jni/engine/gzdoom/src/rendering/hwrenderer/scene/hw_portal.cpp
+index 822d6a4..31749b7 100644
+--- a/doom/src/main/jni/engine/gzdoom/src/rendering/hwrenderer/scene/hw_portal.cpp
++++ b/doom/src/main/jni/engine/gzdoom/src/rendering/hwrenderer/scene/hw_portal.cpp
+@@ -28,6 +28,37 @@
+ #include "hw_lighting.h"
+ #include "hw_cvars.h"
+ #include "texturemanager.h"
++#include "fnaf_outside_black.h"
++
++// Off by default in the engine; the Android menu passes its selected mode.
++CVAR(Bool, fnaf_outside_black, false, 0)
++unsigned long long fnaf_outside_portals_skipped = 0;
++unsigned long long fnaf_outside_views_skipped = 0;
++
++CCMD(fnaf_outside_stats)
++{
++    Printf("FNAF_OUTSIDE_STATS portals=%llu views=%llu enabled=%d\n",
++        fnaf_outside_portals_skipped, fnaf_outside_views_skipped, !!fnaf_outside_black);
++}
++
++static bool FnafExteriorPortalSpan(FLevelLocals *level, FLinePortalSpan *span)
++{
++    if (!level || !span || span->lines.Size() == 0) return false;
++    // Fail open if any member of a merged span is not a known outdoor portal.
++    for (unsigned i = 0; i < span->lines.Size(); ++i)
++    {
++        auto portal = span->lines[i];
++        if (!portal || !portal->mOrigin || !portal->mDestination) return false;
++        auto src = portal->mOrigin;
++        auto dst = portal->mDestination;
++        if (!src->v1 || !src->v2 || !dst->v1 || !dst->v2) return false;
++        if (!FnafOutsideBlack::ExteriorPortal(level->MapName.GetChars(),
++            level->GetFirstLineId(src), level->GetFirstLineId(dst),
++            (src->v1->fX() + src->v2->fX()) * 0.5, (src->v1->fY() + src->v2->fY()) * 0.5,
++            (dst->v1->fX() + dst->v2->fX()) * 0.5, (dst->v1->fY() + dst->v2->fY()) * 0.5)) return false;
++    }
++    return true;
++}
+ 
+ void SetPlaneTextureRotation(FRenderState& state, HWSectorPlane* plane, FGameTexture* texture);
+ 
+@@ -601,6 +632,13 @@ const char *HWMirrorPortal::GetName() { return "Mirror"; }
+ //-----------------------------------------------------------------------------
+ bool HWLineToLinePortal::Setup(HWDrawInfo *di, FRenderState &rstate, Clipper *clipper)
+ {
++    // Setup(false) uses the engine's existing black, stencil-clipped portal
++    // fallback. DrawScene(DM_PORTAL) is never called for this view.
++    if (fnaf_outside_black && FnafExteriorPortalSpan(di->Level, glport))
++    {
++        ++fnaf_outside_portals_skipped;
++        return false;
++    }
+ 	// TODO: Handle recursion more intelligently
+ 	auto &state = mState;
+ 	if (state->renderdepth>r_portal_recursions)
+diff --git a/doom/src/main/jni/engine/gzdoom/src/rendering/hwrenderer/scene/fnaf_outside_black.h b/doom/src/main/jni/engine/gzdoom/src/rendering/hwrenderer/scene/fnaf_outside_black.h
+new file mode 100644
+index 0000000..4b0dc85
+--- /dev/null
++++ b/doom/src/main/jni/engine/gzdoom/src/rendering/hwrenderer/scene/fnaf_outside_black.h
+@@ -0,0 +1,52 @@
++#pragma once
++
++// Render-only experiment for the exact five FNAF Movie Doom night maps.
++// Deliberately fail open for unknown map names, portals and camera positions.
++// These tests do not alter the map's linedefs, collision, sounds or actors.
++namespace FnafOutsideBlack
++{
++inline bool NightMap(const char* name)
++{
++    if (!name) return false;
++    const char expected[] = "NIGHT";
++    for (int i = 0; i < 5; ++i)
++    {
++        char c = name[i];
++        if (!c) return false;
++        if (c >= 'a' && c <= 'z') c -= 'a' - 'A';
++        if (c != expected[i]) return false;
++    }
++    return name[5] >= '1' && name[5] <= '5' && name[6] == '\0';
++}
++
++// These areas are the separate outdoor world and the eight isolated outdoor
++// display/camera cells in the original NIGHT1..5 maps. A player/camera view
++// here can be cleared without traversing its BSP. Other positions fail open.
++inline bool ExteriorView(const char* map, double x, double y)
++{
++    if (!NightMap(map)) return false;
++    const bool externalWorld = x >= -4900 && x <= 10000 && y >= -13400 && y <= -2530;
++    const bool outdoorCells = x >= 3640 && x <= 5730 && y >= 2540 && y <= 3670;
++    return externalWorld || outdoorCells;
++}
++
++// Exact interior-to-outside portals shared by NIGHT1..5, plus the portals in
++// outdoor display cells. Both source/destination tags AND approximate
++// coordinates must match. Reverse portals back toward the interior never match.
++inline bool ExteriorPortal(const char* map, int sourceId, int destinationId,
++                           double sx, double sy, double dx, double dy)
++{
++    if (!NightMap(map)) return false;
++    const bool entrancePair =
++        (sourceId == 101 && destinationId == 100) ||
++        (sourceId == 103 && destinationId == 102) ||
++        (sourceId == 105 && destinationId == 104) ||
++        (sourceId == 106 && destinationId == 108) ||
++        (sourceId == 107 && destinationId == 109);
++    if (entrancePair && sx >= -700 && sx <= 100 && sy >= -970 && sy <= -930 &&
++        dx >= 2600 && dx <= 3450 && dy >= -8100 && dy <= -8000) return true;
++    const bool cellPair = sourceId == 0 && (destinationId == 20 || destinationId == 21);
++    return cellPair && sx >= 3600 && sx <= 5750 && sy >= 2500 && sy <= 3700 &&
++           dx >= 3100 && dx <= 3600 && dy >= -8600 && dy <= -8100;
++}
++} // namespace FnafOutsideBlack

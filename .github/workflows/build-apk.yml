@@ -36,6 +36,10 @@ jobs:
           g++ -std=c++17 -O2 -Wall -Wextra -Werror tools/fnaf-gles-optimization/host_test.cpp -o "$RUNNER_TEMP/fnaf-tests/optimization"
           "$RUNNER_TEMP/fnaf-tests/optimization"
           python3 tools/fnaf-gles-optimization/test_fallback_probe.py
+          g++ -std=c++17 -O2 -Wall -Wextra -Werror tools/fnaf-outside-black/host_test.cpp -o "$RUNNER_TEMP/fnaf-tests/outside"
+          "$RUNNER_TEMP/fnaf-tests/outside"
+          python3 tools/fnaf-outside-black/test_real_maps.py doom/src/main/assets/game/FiveNightsAtFreddysDoomMOVIE.wad
+          python3 -m unittest discover -s scripts/tests -p 'test_fnaf_menu_contract.py' -v
 
       - name: Rebuild safe optimized Android engine
         run: bash tools/fnaf-gles-optimization/build_android_ci.sh

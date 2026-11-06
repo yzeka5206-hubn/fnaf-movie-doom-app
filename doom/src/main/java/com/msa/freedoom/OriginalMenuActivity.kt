@@ -25,6 +25,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 class OriginalMenuActivity : SDLActivity() {
     private val resultSent = AtomicBoolean(false)
     private var resolutionHeight = 480
+    private var outsideBlack = true
 
     override fun useOpenTouch(): Boolean = false
     override fun getLibraries(): Array<String> = arrayOf("hidapi", "saffal", "openal", "SDL2", "Chowdren", "FnafMenuRunner")
@@ -57,8 +58,9 @@ class OriginalMenuActivity : SDLActivity() {
         AppSettings.reloadSettings(application)
         Utils.setImmersionMode(this)
         volumeControlStream = AudioManager.STREAM_MUSIC
-        resolutionHeight = getSharedPreferences("fnaf_original_menu", Context.MODE_PRIVATE)
-            .getInt("resolution_height", 480).let { if (it == 720) 720 else 480 }
+        val preferences = getSharedPreferences("fnaf_original_menu", Context.MODE_PRIVATE)
+        resolutionHeight = preferences.getInt("resolution_height", 480).let { if (it == 720) 720 else 480 }
+        outsideBlack = preferences.getBoolean("outside_black", true)
         addResolutionButton()
     }
 
@@ -92,6 +94,19 @@ class OriginalMenuActivity : SDLActivity() {
                     "Oyun çözünürlüğü: ${resolutionHeight}p", Toast.LENGTH_SHORT).show()
             }
         }
+        val exterior = styledButton(if (outsideBlack) "DIŞ: SİYAH" else "DIŞ: NORMAL").apply {
+            textSize = 11f
+            contentDescription = "Gece birden beşe kadar dış görüntüyü siyah veya normal yap"
+            setOnClickListener {
+                outsideBlack = !outsideBlack
+                text = if (outsideBlack) "DIŞ: SİYAH" else "DIŞ: NORMAL"
+                getSharedPreferences("fnaf_original_menu", Context.MODE_PRIVATE)
+                    .edit().putBoolean("outside_black", outsideBlack).commit()
+                Toast.makeText(this@OriginalMenuActivity,
+                    if (outsideBlack) "Geceler 1–5: dışarısı siyah" else "Geceler 1–5: dışarısı normal",
+                    Toast.LENGTH_SHORT).show()
+            }
+        }
         val backup = styledButton("YEDEK").apply {
             contentDescription = "Kayıtları yedekle veya geri yükle"
             setOnClickListener { startActivity(Intent(this@OriginalMenuActivity, FnafOptionsActivity::class.java)) }
@@ -104,6 +119,10 @@ class OriginalMenuActivity : SDLActivity() {
                 marginStart = (8 * dp).toInt()
             }
             addView(backup, two)
+            val three = LinearLayout.LayoutParams((104 * dp).toInt(), (36 * dp).toInt()).apply {
+                marginStart = (8 * dp).toInt()
+            }
+            addView(exterior, three)
         }
         val params = FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT,
             ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply {
@@ -119,7 +138,7 @@ class OriginalMenuActivity : SDLActivity() {
         runOnUiThread {
             if (isFinishing || resultSent.get()) return@runOnUiThread
             val selected = FnafMenuSelection(map, difficulty, streamer, graphics, shaders,
-                halloween, christmas, resolutionHeight)
+                halloween, christmas, resolutionHeight, outsideBlack)
             if (!selected.isValid()) {
                 Toast.makeText(this, "Geçersiz oyun seçimi.", Toast.LENGTH_LONG).show()
                 return@runOnUiThread

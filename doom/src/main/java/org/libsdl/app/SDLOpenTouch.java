@@ -169,7 +169,8 @@ public class SDLOpenTouch
                     + FnafLaunchProfile.renderScaleArgs(renderWidth, renderHeight)
                     + " +set vid_maxfps 60"
                     + FnafLaunchProfile.buildArgs(selectedMap, difficulty, streamer, graphics,
-                            shaders, halloween, christmas, resolution);
+                            shaders, halloween, christmas, resolution,
+                            intent.getBooleanExtra("fnaf_outside_black", false));
         } else {
             // Legacy paths still retain the v7 direct-start contract.
             renderWidth = fbWidth * 2 / 3;

@@ -40,7 +40,8 @@ public final class FnafLaunchProfile {
     }
 
     public static String buildArgs(String map, int difficulty, int streamer, int graphics,
-                                   int shaders, int halloween, int christmas, int height) {
+                                   int shaders, int halloween, int christmas, int height,
+                                   boolean outsideBlack) {
         if (!isValid(map, difficulty, streamer, graphics, shaders, halloween, christmas, height))
             throw new IllegalArgumentException("Invalid single-player selection");
 
@@ -66,6 +67,8 @@ public final class FnafLaunchProfile {
                 // precaching and all gameplay simulation untouched.
                 " +set gl_precache 0" +
                 " +set fnaf_iqm_cull 1" +
+                // Black only known exterior views in NIGHT1..5; render-only.
+                " +set fnaf_outside_black " + (outsideBlack ? 1 : 0) +
                 // Only the lowest profile caps ordinary world/character images;
                 // camera canvases, fonts and original menus are excluded.
                 " +set fnaf_max_image_size " + (graphics == 0 ? 1024 : 0) +
