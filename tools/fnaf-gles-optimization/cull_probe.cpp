@@ -8,13 +8,12 @@ extern "C" int fnaf_cull_probe(const double* pvm, const float* xyz,
     std::vector<FnafIqmCull::Box> boxes(joints);
     FnafIqmCull::Box unweighted;
     for (int v=0; v<vertices; ++v) {
-        bool weighted=false;
+        // Keep the unskinned bind pose visible if a fallback shader uses it.
+        if (!unweighted.Add(xyz[v*3],xyz[v*3+1],xyz[v*3+2])) return 0;
         for (int i=0; i<4; ++i) if (weights[v*4+i]) {
             int joint=selectors[v*4+i];
             if (joint>=joints || !boxes[joint].Add(xyz[v*3],xyz[v*3+1],xyz[v*3+2])) return 0;
-            weighted=true;
         }
-        if (!weighted && !unweighted.Add(xyz[v*3],xyz[v*3+1],xyz[v*3+2])) return 0;
     }
     return FnafIqmCull::Outside(pvm,boxes.data(),joints,unweighted,palette,joints) ? 1 : 0;
 }

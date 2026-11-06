@@ -34,6 +34,7 @@ jobs:
           java -cp "$RUNNER_TEMP/fnaf-tests" FnafLaunchProfileTest
           g++ -std=c++17 -O2 -Wall -Wextra -Werror tools/fnaf-gles-optimization/host_test.cpp -o "$RUNNER_TEMP/fnaf-tests/optimization"
           "$RUNNER_TEMP/fnaf-tests/optimization"
+          python3 tools/fnaf-gles-optimization/test_fallback_probe.py
 
       - name: Prepare stable signing key
         env:

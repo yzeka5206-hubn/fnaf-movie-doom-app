@@ -72,7 +72,9 @@ def main(path):
                         tested += 1
                         if yes:
                             rejected += 1
-                            clip=posed @ m.T
+                            # SIMPLE/unsupported shader paths can draw bind pose.
+                            # Both possible outputs must be outside the SAME plane.
+                            clip=np.vstack((posed @ m.T, homogeneous @ m.T))
                             plane=np.column_stack((clip[:,3]+clip[:,0],clip[:,3]-clip[:,0],
                                                    clip[:,3]+clip[:,1],clip[:,3]-clip[:,1]))
                             if not np.any(np.all(plane < -1e-8,axis=0)):

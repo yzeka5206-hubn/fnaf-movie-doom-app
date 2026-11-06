@@ -57,11 +57,17 @@ int main() {
         unsigned all=15;
         for (int v=0;v<N;++v) {
             float xyz[3]={rd(rng),rd(rng),rd(rng)};
+            // Production keeps the whole bind pose as well as animated boxes.
+            assert(un.Add(xyz[0],xyz[1],xyz[2]));
+            double raw[4]={xyz[0],xyz[1],xyz[2],1}, rawclip[4]={};
+            for(int row=0;row<4;++row) for(int c=0;c<4;++c) rawclip[row]+=m[c*4+row]*raw[c];
+            for(int plane=0;plane<4;++plane)
+                if(rawclip[3]+((plane&1)?-1:1)*rawclip[plane/2]>=-1e-8) all &= ~(1u<<plane);
             int inds[4], w[4], sum=0;
             for(int j=0;j<4;++j) { inds[j]=bi(rng); w[j]=wi(rng); sum+=w[j]; }
             if (v==0 && (trial%7)==0) { for(int& x:w)x=0; sum=0; }
             double sk[4]={0,0,0,1};
-            if (!sum) { assert(un.Add(xyz[0],xyz[1],xyz[2])); for(int c=0;c<3;++c) sk[c]=xyz[c]; }
+            if (!sum) { for(int c=0;c<3;++c) sk[c]=xyz[c]; }
             else for(int j=0;j<4;++j) if(w[j]) {
                 int k=inds[j]; assert(b[k].Add(xyz[0],xyz[1],xyz[2]));
                 for(int row=0;row<3;++row) {

@@ -27,6 +27,9 @@ animation patch in `../fnaf-gles-skinning/engine.patch`. Engine base:
   palette. Only material setup and draws are suppressed; simulation, animation,
   sound and bone calculations continue. It fails open for unavailable/invalid
   bounds, unsupported matrices, interpolation, HUD, cameras and portal views.
+  The original bind-pose bounds are also included for every IQM vertex: if a
+  simple material pass or unsupported GPU path draws an unskinned model, its
+  visible geometry cannot be rejected just because the animated pose is out.
   `fnaf_iqm_cull` defaults off in the engine; the candidate launcher enables it.
   `fnaf_cull_stats` reports tested/rejected draws.
 * The lowest profile caps ordinary RGBA source images in `characters/`,

@@ -151,7 +151,7 @@ index 82f2f39..b7a8806 100644
  	int FindJoint(FName name) override
  	{
 diff --git a/doom/src/main/jni/engine/gzdoom/src/common/models/models_iqm.cpp b/doom/src/main/jni/engine/gzdoom/src/common/models/models_iqm.cpp
-index 9964ee7..8d0cd9d 100644
+index 9964ee7..748336f 100644
 --- a/doom/src/main/jni/engine/gzdoom/src/common/models/models_iqm.cpp
 +++ b/doom/src/main/jni/engine/gzdoom/src/common/models/models_iqm.cpp
 @@ -297,6 +297,7 @@ bool IQMModel::Load(const char* path, int lumpnum, const char* buffer, int lengt
@@ -162,7 +162,7 @@ index 9964ee7..8d0cd9d 100644
  	try
  	{
  		auto lumpdata = fileSystem.ReadFile(mLumpNum);
-@@ -327,12 +328,48 @@ void IQMModel::LoadGeometry()
+@@ -327,12 +328,49 @@ void IQMModel::LoadGeometry()
  				LoadBlendWeights(reader, vertexArray);
  			}
  		}
@@ -195,15 +195,16 @@ index 9964ee7..8d0cd9d 100644
 +	fnafUnweightedBounds = {};
 +	for (const FModelVertex& v : Vertices)
 +	{
-+		bool weighted = false;
++		// Some material passes or GPU fallbacks may draw the unskinned bind
++		// pose. Include every original vertex as well as animated bone boxes,
++		// so neither path can be rejected while its geometry is visible.
++		if (!fnafUnweightedBounds.Add(v.x, v.y, v.z)) return;
 +		for (int i = 0; i < 4; ++i)
 +		{
 +			if (!v.boneweight[i]) continue;
-+			weighted = true;
 +			int joint = v.boneselector[i];
 +			if (joint >= count || !fnafBoneBounds[joint].Add(v.x, v.y, v.z)) return;
 +		}
-+		if (!weighted && !fnafUnweightedBounds.Add(v.x, v.y, v.z)) return;
 +	}
 +	fnafCullBoundsValid = true;
 +}
