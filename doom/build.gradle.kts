@@ -18,8 +18,8 @@ android {
         applicationId = "com.fnaf.moviedoom"
         minSdk = 33
         targetSdk = 36
-        versionCode = 12
-        versionName = "0.9.3-optimize-test"
+        versionCode = 13
+        versionName = "0.9.4-optimize-test"
         manifestPlaceholders["fnafAppLabel"] = "FNAF Movie Doom"
 
         // This animation-test candidate targets the Xiaomi 11T (ARM64).

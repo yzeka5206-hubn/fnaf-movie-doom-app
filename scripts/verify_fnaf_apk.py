@@ -11,7 +11,7 @@ from pathlib import Path
 BUILD_MARKER = b"FNAF_DIAG_V7_2026"
 REQUIRED_DEX_MARKERS = (
     BUILD_MARKER,
-    b"0.9.3-optimize-test",
+    b"0.9.4-optimize-test",
     b"vid_scale_customwidth",
     b"fnaf_cull_stats",
     b"FnafMenuActivity",
