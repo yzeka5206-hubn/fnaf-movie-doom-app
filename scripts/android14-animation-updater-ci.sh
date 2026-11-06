@@ -147,7 +147,7 @@ fi
 "$ADB" shell uiautomator dump /sdcard/helper-after.xml >/dev/null || true
 "$ADB" shell cat /sdcard/helper-after.xml || true
 "$ADB" pull /sdcard/Download/FNAF_Optimize_Test.apk "$RUNNER_TEMP/repaired-fixture.apk" >/dev/null
-echo '5047ab19722faa809649251d5eb3e3b0f7705294db4e9d535f8cc28180ff9e7c  '"$RUNNER_TEMP/repaired-fixture.apk" | sha256sum -c -
+echo 'f55c97179051b1ae5b36a255baa79d4c33e03c51ae0c15b4b0628f7a68ff9286  '"$RUNNER_TEMP/repaired-fixture.apk" | sha256sum -c -
 "$ANDROID_SDK_ROOT/build-tools/36.0.0/apksigner" verify --verbose "$RUNNER_TEMP/repaired-fixture.apk" | head -4
 "$ADB" shell pm path com.fnaf.moviedoom.animationtest
 # The target is a distinct package: both should coexist and old app data remain.

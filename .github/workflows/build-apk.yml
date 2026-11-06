@@ -37,9 +37,9 @@ jobs:
           from pathlib import Path
           import hashlib,struct
           root=Path('doom/repair/assets')
-          target='5047ab19722faa809649251d5eb3e3b0f7705294db4e9d535f8cc28180ff9e7c'
+          target='f55c97179051b1ae5b36a255baa79d4c33e03c51ae0c15b4b0628f7a68ff9286'
           variants={
-            'repair-optimized.dat':('6872aa42e59cfd66bfceae35cd1c289382f533dd2b91d57ce0d8bf91e7a256a4','91ce6be4bb67e90425899c7db3e874e498cfcad88032e0e931621028598875ed'),
+            'repair-optimized.dat':('6872aa42e59cfd66bfceae35cd1c289382f533dd2b91d57ce0d8bf91e7a256a4','8dbbeaa83fe3ac25bfb337fa74c85cd69f3554cbe9a78177cdf6b1914670a2ac'),
           }
           for name,(source,patch_sha) in variants.items():
               data=(root/name).read_bytes()
