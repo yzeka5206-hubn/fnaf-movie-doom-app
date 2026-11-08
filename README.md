@@ -32,13 +32,18 @@ reddettiği bir durumda oyun **kaldırılmamalıdır**.
 
 ## Otomatik doğrulama kapsamı
 
-Workflow Java patch testlerini ve dosya başlıklarını kontrol eder, tek bir aday
-APK üretir. Ardından **aynı aday** Android 14 emülatöründe v13 ve v14'ten ayrı
-aşamalarda çalıştırılır: gerçek eski APK kurulur, yardımcıdan yeni dosya
-hazırlanır, tam SHA ve imza doğrulanır, `adb install -r` ile yerinde güncellenir
-ve eski özel verideki sentinel kontrol edilir. Son artifact yalnız her iki
-Android testi başarılıysa yayınlanır. Emülatör yardımcı uygulamayı test eder;
-oyunun ARM64 üzerinde performansını veya Xiaomi 11T davranışını **ölçmez**.
+Derleme çalışması `42474432210`, Java patch testlerini ve dosya başlıklarını
+kontrol ederek SHA-256'sı `98176561a92639ce81337d208e5dfc3b3feda51a02ca8137a1e2873d35f1d68d`
+olan tek aday APK'yı üretip imzasını doğruladı. Android emülatörü kullanıcı
+depolaması açılmadan başlayan v14 testini tekrar etmek için bu daldaki geçerli
+workflow **aynı, hash'i sabitlenmiş adayı** alır ve Android 14'te her iki eski
+sürümü yeniden dener. Gerçek eski APK kurulur, yardımcıdan yeni dosya hazırlanır,
+tam SHA ve imza doğrulanır, `adb install -r` ile yerinde güncellenir ve eski
+özel verideki sentinel kontrol edilir. Son artifact yalnız her iki test başarılıysa
+yayınlanır. Gelecekte kaynaklardan yeniden derleme workflow şablonu
+`scripts/build-fps60-updater-full.yml` dosyasındadır; yeni hedef için hash'ler
+güncellenmelidir. Emülatör yardımcı uygulamayı test eder; oyunun ARM64 üzerinde
+performansını veya Xiaomi 11T davranışını **ölçmez**.
 
 Oyun, FPS sayacı ve optimizasyonlar için bkz. `experiment-fps60-counter` dalı.
 60 FPS hedeftir; sahneye ve cihaza göre değişir, garanti değildir.
