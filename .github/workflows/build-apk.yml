@@ -60,6 +60,18 @@ jobs:
           python3 -m unittest discover -s scripts/tests -p 'test_fnaf_menu_contract.py' -v
           python3 -m unittest discover -s scripts/tests -p 'test_fps60_contract.py' -v
 
+      # Download before the six-minute native build, retrying temporary 5xx errors.
+      # The binary distribution has the same Gradle runtime and is SHA-256 pinned.
+      - name: Preflight pinned Gradle distribution
+        run: |
+          chmod +x ./gradlew
+          for attempt in 1 2 3; do
+            if ./gradlew --version; then exit 0; fi
+            echo "Gradle download attempt $attempt failed" >&2
+            if [ "$attempt" -eq 3 ]; then exit 1; fi
+            sleep $((attempt * 5))
+          done
+
       - name: Rebuild safe optimized Android engine
         run: bash tools/fnaf-gles-optimization/build_android_ci.sh
 
