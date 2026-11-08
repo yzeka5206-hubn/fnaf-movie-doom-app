@@ -1,0 +1,61 @@
+name: Verify pinned FPS60 helper on Android 14
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+# The APK was built, signed and checked in the successful build job of run
+# 42474432210. Its v13 test passed; the v14 test stopped before starting the
+# helper because the fresh emulator's user data had not unlocked yet. This
+# workflow reuses that EXACT, hash-pinned candidate and repeats BOTH baselines
+# with the boot-readiness fix. It never publishes unless both tests pass.
+jobs:
+  android_test:
+    strategy:
+      fail-fast: false
+      matrix:
+        baseline: [13, 14]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout test script
+        uses: actions/checkout@v4
+      - name: Install Android SDK build tools
+        run: |
+          yes | "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+          "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" 'build-tools;36.0.0'
+      - name: Download exact previously built candidate
+        uses: actions/download-artifact@v4
+        with:
+          name: FNAF-FPS60-Helper-Candidate
+          path: helper
+          run-id: 42474432210
+          github-token: ${{ github.token }}
+      - name: Verify candidate byte identity
+        run: echo '98176561a92639ce81337d208e5dfc3b3feda51a02ca8137a1e2873d35f1d68d  helper/FNAF-FPS60-Guncelleyici.apk' | sha256sum -c -
+      - name: Android 14 real APK v${{ matrix.baseline }} in-place update
+        run: bash scripts/android14-animation-updater-ci.sh "$PWD/helper/FNAF-FPS60-Guncelleyici.apk" '${{ matrix.baseline }}'
+
+  publish:
+    needs: android_test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download twice-tested identical candidate
+        uses: actions/download-artifact@v4
+        with:
+          name: FNAF-FPS60-Helper-Candidate
+          path: helper
+          run-id: 42474432210
+          github-token: ${{ github.token }}
+      - name: Verify candidate byte identity
+        run: echo '98176561a92639ce81337d208e5dfc3b3feda51a02ca8137a1e2873d35f1d68d  helper/FNAF-FPS60-Guncelleyici.apk' | sha256sum -c -
+      - name: Upload verified updater APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: FNAF-FPS60-Guncelleyici
+          path: helper/FNAF-FPS60-Guncelleyici.apk
+          if-no-files-found: error
+          retention-days: 90

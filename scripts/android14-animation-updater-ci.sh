@@ -98,9 +98,41 @@ finally:
  except subprocess.TimeoutExpired: p.kill();p.wait()
 PYBOOT
 fi
+# boot_progress_enable_screen can precede sys.boot_completed and credential-
+# encrypted app-data availability. Wait for the actual boot property, then
+# dismiss the initial keyguard before installing and creating the sentinel.
+python3 - "$ADB" <<'PYREADY'
+import subprocess,sys,time
+adb=sys.argv[1];end=time.monotonic()+180
+while time.monotonic()<end:
+ try:
+  result=subprocess.run([adb,'shell','getprop','sys.boot_completed'],capture_output=True,text=True,timeout=10)
+  if result.returncode==0 and result.stdout.strip()=='1':
+   print('PASS Android sys.boot_completed=1',flush=True);break
+ except subprocess.TimeoutExpired:pass
+ time.sleep(2)
+else:raise SystemExit('Android did not report full boot in 180 seconds')
+PYREADY
+"$ADB" shell input keyevent 82 || true
+"$ADB" shell wm dismiss-keyguard || true
 printf '=== Android version / install actual original app and helper ===\n'
 "$ADB" shell getprop ro.build.version.release
 "$ADB" install --no-streaming "$OLD"
+# User 0 CE storage may become available shortly after the installer says
+# Success. Do not skip the real sentinel: wait for run-as to work first.
+python3 - "$ADB" <<'PYDATA'
+import subprocess,sys,time
+adb=sys.argv[1];end=time.monotonic()+120;last=''
+while time.monotonic()<end:
+ try:
+  result=subprocess.run([adb,'shell','run-as','com.fnaf.moviedoom.optimized','id'],capture_output=True,text=True,timeout=10)
+  if result.returncode==0 and 'uid=' in result.stdout:
+   print('PASS installed original app data available to run-as',flush=True);break
+  last=(result.stderr+' '+result.stdout).strip()
+ except subprocess.TimeoutExpired:last='adb run-as timeout'
+ time.sleep(2)
+else:raise SystemExit('Original app data not available for sentinel: '+last)
+PYDATA
 # Sentinel demonstrates the original package's private data survives preparation
 # and an in-place update of the previously installed optimized package.
 "$ADB" shell run-as com.fnaf.moviedoom.optimized sh -c "'mkdir -p files; echo optimized-data-preserved > files/updater-ci-sentinel.txt'"
