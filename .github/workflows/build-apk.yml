@@ -1,4 +1,4 @@
-name: Verify pinned FPS60 helper on Android 14
+name: Build and verify FPS research offline updater
 
 on:
   workflow_dispatch:
@@ -7,17 +7,86 @@ permissions:
   contents: read
   actions: read
 
-# The APK was built, signed and checked in the successful build job of run
-# 42474432210. Its v13 test passed; the v14 test stopped before starting the
-# helper because the fresh emulator's user data had not unlocked yet. This
-# workflow reuses that EXACT, hash-pinned candidate and repeats BOTH baselines
-# with the boot-readiness fix. It never publishes unless both tests pass.
 jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout updater sources without game LFS downloads
+        uses: actions/checkout@v4
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Install Android SDK components
+        run: |
+          yes | "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+          "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" 'platforms;android-36' 'build-tools;36.0.0'
+      - name: Check PCH2 safety and exact source/target headers
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/patch-classes"
+          javac -encoding UTF-8 -d "$RUNNER_TEMP/patch-classes" \
+            doom/repair/java/com/fnaf/moviedoom/repair/PatchEngine.java doom/repair/tests/Test.java
+          java -cp "$RUNNER_TEMP/patch-classes" com.fnaf.moviedoom.repair.Test
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib,struct
+          root=Path('doom/repair/assets')
+          target='__TARGET_SHA__'
+          variants={
+            'repair-v15.dat':('3ae61eee3afd2fd1b55c73cefff22d5c540a000d4961d04e35ee0edbb48c1fe5','__PATCH15_SHA__'),
+          }
+          for name,(source,patch_sha) in variants.items():
+              data=(root/name).read_bytes()
+              assert hashlib.sha256(data).hexdigest()==patch_sha, name
+              assert data[:8]==b'FNAFPCH2' and data[24:56].hex()==source and data[56:88].hex()==target, name
+              count=struct.unpack('>I',data[88:92])[0]
+              assert 0<count<=16384, (name,count)
+              print('PASS',name,'whole patch SHA, source SHA, target SHA,',count,'operations')
+          PY
+      - name: Preflight pinned Gradle distribution
+        run: |
+          chmod +x ./gradlew
+          for attempt in 1 2 3; do
+            if ./gradlew --version; then exit 0; fi
+            echo "Gradle download attempt $attempt failed" >&2
+            if [ "$attempt" -eq 3 ]; then exit 1; fi
+            sleep $((attempt * 5))
+          done
+      - name: Build offline updater
+        run: |
+          chmod +x ./gradlew
+          ./gradlew :doom:assembleDebug --no-daemon
+      - name: Verify updater package, permissions, and signature
+        run: |
+          set -euo pipefail
+          APK=doom/build/outputs/apk/debug/FNAF-FPS-Deneme-Guncelleyici.apk
+          test -s "$APK"
+          sha256sum "$APK"
+          "$ANDROID_SDK_ROOT/build-tools/36.0.0/apksigner" verify --verbose "$APK"
+          "$ANDROID_SDK_ROOT/build-tools/36.0.0/aapt" dump badging "$APK" > "$RUNNER_TEMP/badging.txt"
+          grep '^package: name=' "$RUNNER_TEMP/badging.txt" | grep "com.fnaf.moviedoom.fpsresearchupdater"
+          "$ANDROID_SDK_ROOT/build-tools/36.0.0/aapt" dump permissions "$APK" > "$RUNNER_TEMP/permissions.txt"
+          if grep -Fq 'android.permission.INTERNET' "$RUNNER_TEMP/permissions.txt"; then
+            echo 'Unexpected network permission'; exit 1
+          fi
+          echo 'PASS unique updater package and no INTERNET permission'
+      - name: Upload candidate used for Android test
+        uses: actions/upload-artifact@v4
+        with:
+          name: FNAF-FPS-Research-Helper-Candidate
+          path: doom/build/outputs/apk/debug/FNAF-FPS-Deneme-Guncelleyici.apk
+          if-no-files-found: error
+          retention-days: 90
+
   android_test:
+    needs: build
     strategy:
       fail-fast: false
       matrix:
-        baseline: [13, 14]
+        baseline: [15]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -27,35 +96,27 @@ jobs:
         run: |
           yes | "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
           "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" 'build-tools;36.0.0'
-      - name: Download exact previously built candidate
+      - name: Download same candidate
         uses: actions/download-artifact@v4
         with:
-          name: FNAF-FPS60-Helper-Candidate
+          name: FNAF-FPS-Research-Helper-Candidate
           path: helper
-          run-id: 42474432210
-          github-token: ${{ github.token }}
-      - name: Verify candidate byte identity
-        run: echo '98176561a92639ce81337d208e5dfc3b3feda51a02ca8137a1e2873d35f1d68d  helper/FNAF-FPS60-Guncelleyici.apk' | sha256sum -c -
       - name: Android 14 real APK v${{ matrix.baseline }} in-place update
-        run: bash scripts/android14-animation-updater-ci.sh "$PWD/helper/FNAF-FPS60-Guncelleyici.apk" '${{ matrix.baseline }}'
+        run: bash scripts/android14-animation-updater-ci.sh "$PWD/helper/FNAF-FPS-Deneme-Guncelleyici.apk" '${{ matrix.baseline }}'
 
   publish:
-    needs: android_test
+    needs: [build, android_test]
     runs-on: ubuntu-latest
     steps:
-      - name: Download twice-tested identical candidate
+      - name: Download tested helper
         uses: actions/download-artifact@v4
         with:
-          name: FNAF-FPS60-Helper-Candidate
+          name: FNAF-FPS-Research-Helper-Candidate
           path: helper
-          run-id: 42474432210
-          github-token: ${{ github.token }}
-      - name: Verify candidate byte identity
-        run: echo '98176561a92639ce81337d208e5dfc3b3feda51a02ca8137a1e2873d35f1d68d  helper/FNAF-FPS60-Guncelleyici.apk' | sha256sum -c -
       - name: Upload verified updater APK
         uses: actions/upload-artifact@v4
         with:
-          name: FNAF-FPS60-Guncelleyici
-          path: helper/FNAF-FPS60-Guncelleyici.apk
+          name: FNAF-FPS-Deneme-Guncelleyici
+          path: helper/FNAF-FPS-Deneme-Guncelleyici.apk
           if-no-files-found: error
           retention-days: 90

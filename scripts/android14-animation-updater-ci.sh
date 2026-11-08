@@ -12,10 +12,9 @@ TOKEN=${DECODED#*:}
 unset AUTH_HEADER ENCODED DECODED
 OLD_DIR="$RUNNER_TEMP/original-artifact"
 mkdir -p "$OLD_DIR"
-BASE_VERSION=${2:?Pass 13 or 14}
+BASE_VERSION=${2:?Pass 15}
 case "$BASE_VERSION" in
-  13) ARTIFACT=13502001259; OLD_SHA=f55c97179051b1ae5b36a255baa79d4c33e03c51ae0c15b4b0628f7a68ff9286 ;;
-  14) ARTIFACT=13538362777; OLD_SHA=becb43039e405b619dc39c8b2d00e5d0ffe991fac1a6bc6e2edba837371b8879 ;;
+  15) ARTIFACT=13614483647; OLD_SHA=3ae61eee3afd2fd1b55c73cefff22d5c540a000d4961d04e35ee0edbb48c1fe5 ;;
   *) echo 'unsupported baseline' >&2; exit 1 ;;
 esac
 curl -fsSL --retry 2 -H "Authorization: Bearer $TOKEN" -H 'Accept: application/vnd.github+json' \
@@ -139,7 +138,7 @@ PYDATA
 "$ADB" install "$HELPER"
 "$ADB" logcat -c
 "$ADB" shell wm dismiss-keyguard || true
-"$ADB" shell am start -W -n com.fnaf.moviedoom.fpsupdater/com.fnaf.moviedoom.repair.MainActivity
+"$ADB" shell am start -W -n com.fnaf.moviedoom.fpsresearchupdater/com.fnaf.moviedoom.repair.MainActivity
 "$ADB" shell uiautomator dump /sdcard/window.xml >/dev/null
 "$ADB" shell cat /sdcard/window.xml > "$RUNNER_TEMP/helper-window.xml"
 read X Y < <(python3 - "$RUNNER_TEMP/helper-window.xml" <<'PY'
@@ -160,15 +159,15 @@ if ! python3 - "$ADB" <<'PYPUBLISHED'
 import subprocess,sys,time
 adb=sys.argv[1]; start=time.monotonic(); end=start+300; sampled=set()
 while time.monotonic()<end:
- result=subprocess.run([adb,'shell','test','-f','/sdcard/Download/FNAF_FPS60_Test.apk'], stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+ result=subprocess.run([adb,'shell','test','-f','/sdcard/Download/FNAF_FPS_Deneme_v16.apk'], stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
  if result.returncode==0:
   print('Published output detected after',round(time.monotonic()-start),'seconds',flush=True);break
  elapsed=time.monotonic()-start
  for mark in (30,120,240):
   if elapsed>=mark and mark not in sampled:
    sampled.add(mark); print('=== updater diagnosis at',mark,'seconds ===',flush=True)
-   subprocess.run([adb,'shell','run-as','com.fnaf.moviedoom.fpsupdater','ls','-la','/sdcard/Download'],timeout=20,check=False)
-   pid=subprocess.run([adb,'shell','pidof','com.fnaf.moviedoom.fpsupdater'],capture_output=True,text=True,timeout=10).stdout.strip()
+   subprocess.run([adb,'shell','run-as','com.fnaf.moviedoom.fpsresearchupdater','ls','-la','/sdcard/Download'],timeout=20,check=False)
+   pid=subprocess.run([adb,'shell','pidof','com.fnaf.moviedoom.fpsresearchupdater'],capture_output=True,text=True,timeout=10).stdout.strip()
    if pid:
     try: subprocess.run([adb,'shell','debuggerd','-b',pid],timeout=20,check=False)
     except subprocess.TimeoutExpired: print('debuggerd timed out',flush=True)
@@ -184,14 +183,14 @@ then
 fi
 "$ADB" shell uiautomator dump /sdcard/helper-after.xml >/dev/null || true
 "$ADB" shell cat /sdcard/helper-after.xml || true
-"$ADB" pull /sdcard/Download/FNAF_FPS60_Test.apk "$RUNNER_TEMP/repaired-fixture.apk" >/dev/null
-echo '3ae61eee3afd2fd1b55c73cefff22d5c540a000d4961d04e35ee0edbb48c1fe5  '"$RUNNER_TEMP/repaired-fixture.apk" | sha256sum -c -
+"$ADB" pull /sdcard/Download/FNAF_FPS_Deneme_v16.apk "$RUNNER_TEMP/repaired-fixture.apk" >/dev/null
+echo '__TARGET_SHA__  '"$RUNNER_TEMP/repaired-fixture.apk" | sha256sum -c -
 "$ANDROID_SDK_ROOT/build-tools/36.0.0/apksigner" verify --verbose "$RUNNER_TEMP/repaired-fixture.apk" | head -4
 "$ADB" shell pm path com.fnaf.moviedoom.optimized
 # Real same-package upgrade: Android must accept the signing certificate and
 # retain the existing app's private data instead of uninstalling it.
 "$ADB" install -r --no-streaming "$RUNNER_TEMP/repaired-fixture.apk"
 "$ADB" shell pm path com.fnaf.moviedoom.optimized
-"$ADB" shell dumpsys package com.fnaf.moviedoom.optimized | grep -F 'versionCode=15'
+"$ADB" shell dumpsys package com.fnaf.moviedoom.optimized | grep -F 'versionCode=16'
 "$ADB" shell run-as com.fnaf.moviedoom.optimized cat files/updater-ci-sentinel.txt | tr -d '\r' | grep -Fx 'optimized-data-preserved'
-printf 'PASS: REAL optimize APK reconstructed and upgraded in-place on Android 14; signature, version 15 and private-data sentinel intact (base version %s)\n' "$BASE_VERSION"
+printf 'PASS: REAL optimize APK reconstructed and upgraded in-place on Android 14; signature, version 16 and private-data sentinel intact (base version %s)\n' "$BASE_VERSION"
