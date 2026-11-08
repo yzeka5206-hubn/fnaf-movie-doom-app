@@ -26,6 +26,8 @@ class OriginalMenuActivity : SDLActivity() {
     private val resultSent = AtomicBoolean(false)
     private var resolutionHeight = 480
     private var outsideBlack = true
+    private var lightTextures = true
+    private var cameraSaver = false
 
     override fun useOpenTouch(): Boolean = false
     override fun getLibraries(): Array<String> = arrayOf("hidapi", "saffal", "openal", "SDL2", "Chowdren", "FnafMenuRunner")
@@ -61,6 +63,8 @@ class OriginalMenuActivity : SDLActivity() {
         val preferences = getSharedPreferences("fnaf_original_menu", Context.MODE_PRIVATE)
         resolutionHeight = preferences.getInt("resolution_height", 480).let { if (it == 720) 720 else 480 }
         outsideBlack = preferences.getBoolean("outside_black", true)
+        lightTextures = preferences.getBoolean("light_textures", true)
+        cameraSaver = preferences.getBoolean("camera_saver", false)
         addResolutionButton()
     }
 
@@ -107,6 +111,32 @@ class OriginalMenuActivity : SDLActivity() {
                     Toast.LENGTH_SHORT).show()
             }
         }
+        val textureButton = styledButton(if (lightTextures) "DOKU: FPS" else "DOKU: NORMAL").apply {
+            textSize = 10f
+            contentDescription = "Dünya dokularında FPS veya normal kaliteyi seç"
+            setOnClickListener {
+                lightTextures = !lightTextures
+                text = if (lightTextures) "DOKU: FPS" else "DOKU: NORMAL"
+                getSharedPreferences("fnaf_original_menu", Context.MODE_PRIVATE)
+                    .edit().putBoolean("light_textures", lightTextures).commit()
+                Toast.makeText(this@OriginalMenuActivity,
+                    if (lightTextures) "Daha küçük dünya dokuları ve mipmap" else "Önceki doku ayarları",
+                    Toast.LENGTH_SHORT).show()
+            }
+        }
+        val cameraButton = styledButton(if (cameraSaver) "KAMERA: TASARRUF" else "KAMERA: NORMAL").apply {
+            textSize = 10f
+            contentDescription = "Güvenlik ekranlarının yenileme hızını değiştir"
+            setOnClickListener {
+                cameraSaver = !cameraSaver
+                text = if (cameraSaver) "KAMERA: TASARRUF" else "KAMERA: NORMAL"
+                getSharedPreferences("fnaf_original_menu", Context.MODE_PRIVATE)
+                    .edit().putBoolean("camera_saver", cameraSaver).commit()
+                Toast.makeText(this@OriginalMenuActivity,
+                    if (cameraSaver) "Güvenlik ekranları daha yavaş yenilenir" else "Güvenlik ekranları normal yenilenir",
+                    Toast.LENGTH_SHORT).show()
+            }
+        }
         val backup = styledButton("YEDEK").apply {
             contentDescription = "Kayıtları yedekle veya geri yükle"
             setOnClickListener { startActivity(Intent(this@OriginalMenuActivity, FnafOptionsActivity::class.java)) }
@@ -123,6 +153,14 @@ class OriginalMenuActivity : SDLActivity() {
                 marginStart = (8 * dp).toInt()
             }
             addView(exterior, three)
+            val four = LinearLayout.LayoutParams((104 * dp).toInt(), (36 * dp).toInt()).apply {
+                marginStart = (8 * dp).toInt()
+            }
+            addView(textureButton, four)
+            val five = LinearLayout.LayoutParams((130 * dp).toInt(), (36 * dp).toInt()).apply {
+                marginStart = (8 * dp).toInt()
+            }
+            addView(cameraButton, five)
         }
         val params = FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT,
             ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply {
@@ -138,7 +176,7 @@ class OriginalMenuActivity : SDLActivity() {
         runOnUiThread {
             if (isFinishing || resultSent.get()) return@runOnUiThread
             val selected = FnafMenuSelection(map, difficulty, streamer, graphics, shaders,
-                halloween, christmas, resolutionHeight, outsideBlack)
+                halloween, christmas, resolutionHeight, outsideBlack, lightTextures, cameraSaver)
             if (!selected.isValid()) {
                 Toast.makeText(this, "Geçersiz oyun seçimi.", Toast.LENGTH_LONG).show()
                 return@runOnUiThread

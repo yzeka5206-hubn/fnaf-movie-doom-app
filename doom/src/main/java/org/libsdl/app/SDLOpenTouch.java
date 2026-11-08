@@ -170,7 +170,9 @@ public class SDLOpenTouch
                     + FnafLaunchProfile.frameRateArgs()
                     + FnafLaunchProfile.buildArgs(selectedMap, difficulty, streamer, graphics,
                             shaders, halloween, christmas, resolution,
-                            intent.getBooleanExtra("fnaf_outside_black", false));
+                            intent.getBooleanExtra("fnaf_outside_black", false),
+                            intent.getBooleanExtra("fnaf_light_textures", true),
+                            intent.getBooleanExtra("fnaf_camera_saver", false));
         } else {
             // Legacy paths still retain the v7 direct-start contract.
             renderWidth = fbWidth * 2 / 3;

@@ -1,0 +1,599 @@
+diff --git a/doom/src/main/jni/engine/gzdoom/src/common/rendering/gles/fnaf_light_cache.h b/doom/src/main/jni/engine/gzdoom/src/common/rendering/gles/fnaf_light_cache.h
+new file mode 100644
+index 0000000..eca96e9
+--- /dev/null
++++ b/doom/src/main/jni/engine/gzdoom/src/common/rendering/gles/fnaf_light_cache.h
+@@ -0,0 +1,21 @@
++// Exact, per-program light-uniform cache. This never selects or removes lights.
++#pragma once
++#include <cstddef>
++#include <cstring>
++#include <vector>
++
++namespace FnafLightCache {
++class UploadCache {
++    std::vector<float> data;
++public:
++    bool Matches(const float* values, std::size_t count) const {
++        return values && data.size() == count &&
++               (count == 0 || std::memcmp(data.data(), values, count * sizeof(float)) == 0);
++    }
++    void Remember(const float* values, std::size_t count) {
++        if (!values || count == 0) { data.clear(); return; }
++        data.assign(values, values + count);
++    }
++    void Invalidate() { data.clear(); }
++};
++}
+diff --git a/doom/src/main/jni/engine/gzdoom/src/common/rendering/gles/fnaf_texture_policy.h b/doom/src/main/jni/engine/gzdoom/src/common/rendering/gles/fnaf_texture_policy.h
+new file mode 100644
+index 0000000..4bcc8d0
+--- /dev/null
++++ b/doom/src/main/jni/engine/gzdoom/src/common/rendering/gles/fnaf_texture_policy.h
+@@ -0,0 +1,16 @@
++// Low-profile world-texture mipmaps: preserve nearest magnification and all
++// unselected categories, honor platform filter restrictions, and fail safe on
++// GLES2 devices without full NPOT mipmap support.
++#pragma once
++namespace FnafTexturePolicy {
++inline bool UseLowMip(bool requested, bool visual, int sourceFilter,
++                      bool filteringAllowed, bool supportsNpotMipmaps) {
++    return requested && visual && sourceFilter == 0 && filteringAllowed && supportsNpotMipmaps;
++}
++inline int Filter(bool requested, bool visual, int sourceFilter,
++                  bool filteringAllowed, bool supportsNpotMipmaps) {
++    if (!filteringAllowed) return 0;
++    return UseLowMip(requested, visual, sourceFilter, filteringAllowed, supportsNpotMipmaps)
++        ? 1 : sourceFilter;
++}
++}
+diff --git a/doom/src/main/jni/engine/gzdoom/src/common/rendering/gles/gles_hwtexture.cpp b/doom/src/main/jni/engine/gzdoom/src/common/rendering/gles/gles_hwtexture.cpp
+index bc1e4b9..dd991ac 100644
+--- a/doom/src/main/jni/engine/gzdoom/src/common/rendering/gles/gles_hwtexture.cpp
++++ b/doom/src/main/jni/engine/gzdoom/src/common/rendering/gles/gles_hwtexture.cpp
+@@ -32,6 +32,8 @@
+ #include "gles_renderstate.h"
+ #include "gles_hwtexture.h"
+ #include "fnaf_texture_resize.h"
++#include "fnaf_texture_policy.h"
++#include "i_interface.h"
+ #include "filesystem.h"
+ #include "c_dispatch.h"
+ #include "printf.h"
+@@ -39,7 +41,14 @@
+ // 0 keeps upstream behavior. The FNAF low profile opts into a 1024px cap for
+ // world props/skins only, not camera canvases, indexed images or menus.
+ CVAR(Int, fnaf_max_image_size, 0, 0)
++CVAR(Bool, fnaf_mipmap_low, false, 0)
+ static uint64_t fnaf_resized_images = 0;
++static uint64_t fnaf_mip_images = 0;
++CCMD(fnaf_mipmap_stats)
++{
++	Printf("FNAF_MIPMAP_STATS generated=%llu enabled=%d\n",
++		static_cast<unsigned long long>(fnaf_mip_images), int(fnaf_mipmap_low));
++}
+ CCMD(fnaf_texture_stats)
+ {
+ 	Printf("FNAF_TEXTURE_STATS resized=%llu cap=%d\n",
+@@ -49,6 +58,14 @@ CCMD(fnaf_texture_stats)
+ namespace OpenGLESRenderer
+ {
+ 
++int FnafEffectiveTextureFilter(bool visualAsset)
++{
++	const bool filterAllowed = !(sysCallbacks.DisableTextureFilter && sysCallbacks.DisableTextureFilter());
++	// ES3 guarantees NPOT mipmaps. Older ES2 must advertise the extension;
++	// desktop GL supports them. Unsupported devices keep the existing filter.
++	const bool npot = gles.glesMode != GLES_MODE_GLES || gles.fnafBoneTextureSupport || gles.npotAvailable;
++	return FnafTexturePolicy::Filter(bool(fnaf_mipmap_low), visualAsset, int(gl_texture_filter), filterAllowed, npot);
++}
+ 
+ TexFilter_s TexFilter[] = {
+ 	{GL_NEAREST,					GL_NEAREST,		false},
+@@ -84,6 +101,7 @@ unsigned int FHardwareTexture::CreateTexture(unsigned char * buffer, int w, int
+ 
+ unsigned int FHardwareTexture::CreateTextureLimited(unsigned char * buffer, int w, int h, int texunit, bool mipmap, const char *name, bool fnafLimitImage)
+ {
++	fnafVisualImage = fnafLimitImage;
+ 	int rh,rw;
+ 	int texformat = GL_RGBA;// TexFormat[gl_texture_format];
+ 	bool deletebuffer=false;
+@@ -199,9 +217,14 @@ unsigned int FHardwareTexture::CreateTextureLimited(unsigned char * buffer, int
+ 
+ 	if (deletebuffer && buffer) free(buffer);
+ 
+-	if (mipmap && TexFilter[gl_texture_filter].mipmapping)
++	// Preserve upstream behavior for nonzero filters even if a platform
++	// callback disables sampling; opt into mipmaps for low world images only.
++	int uploadFilter = int(gl_texture_filter);
++	if (uploadFilter == 0 && FnafEffectiveTextureFilter(fnafVisualImage) == 1) uploadFilter = 1;
++	if (mipmap && TexFilter[uploadFilter].mipmapping)
+ 	{
+ 		glGenerateMipmap(GL_TEXTURE_2D);
++		if (int(gl_texture_filter) == 0 && fnafVisualImage && uploadFilter == 1) ++fnaf_mip_images;
+ 		mipmapped = true;
+ 	}
+ 
+@@ -252,14 +275,17 @@ unsigned int FHardwareTexture::Bind(int texunit, bool needmipmap)
+ {
+ 	if (glTexID != 0)
+ 	{
+-		if (lastbound[texunit] == glTexID) return glTexID;
++		int uploadFilter = int(gl_texture_filter);
++		if (uploadFilter == 0 && FnafEffectiveTextureFilter(fnafVisualImage) == 1) uploadFilter = 1;
++		if (lastbound[texunit] == glTexID && !(needmipmap && !mipmapped && TexFilter[uploadFilter].mipmapping)) return glTexID;
+ 		lastbound[texunit] = glTexID;
+ 		if (texunit != 0) glActiveTexture(GL_TEXTURE0 + texunit);
+ 		glBindTexture(GL_TEXTURE_2D, glTexID);
+ 		// Check if we need mipmaps on a texture that was creted without them.
+-		if (needmipmap && !mipmapped && TexFilter[gl_texture_filter].mipmapping)
++		if (needmipmap && !mipmapped && TexFilter[uploadFilter].mipmapping)
+ 		{
+ 			glGenerateMipmap(GL_TEXTURE_2D);
++			if (int(gl_texture_filter) == 0 && fnafVisualImage && uploadFilter == 1) ++fnaf_mip_images;
+ 			mipmapped = true;
+ 		}
+ 		if (texunit != 0) glActiveTexture(GL_TEXTURE0);
+@@ -371,7 +397,7 @@ bool FHardwareTexture::BindOrCreate(FTexture *tex, int texunit, int clampmode, i
+ 		}
+ 	}
+ 	if (forcenofilter && clampmode <= CLAMP_XY) clampmode += CLAMP_NOFILTER - CLAMP_NONE;
+-	GLRenderer->mSamplerManager->Bind(texunit, clampmode, 255);
++	GLRenderer->mSamplerManager->Bind(texunit, clampmode, 255, fnafVisualImage);
+ 	return true;
+ }
+ 
+diff --git a/doom/src/main/jni/engine/gzdoom/src/common/rendering/gles/gles_hwtexture.h b/doom/src/main/jni/engine/gzdoom/src/common/rendering/gles/gles_hwtexture.h
+index b04e1bc..6b25a88 100644
+--- a/doom/src/main/jni/engine/gzdoom/src/common/rendering/gles/gles_hwtexture.h
++++ b/doom/src/main/jni/engine/gzdoom/src/common/rendering/gles/gles_hwtexture.h
+@@ -45,6 +45,8 @@ class FCanvasTexture;
+ namespace OpenGLESRenderer
+ {
+ 
++int FnafEffectiveTextureFilter(bool visualAsset);
++
+ class FHardwareTexture : public IHardwareTexture
+ {
+ public:
+@@ -69,6 +71,7 @@ private:
+ 
+ 	int glTextureBytes;
+ 	bool mipmapped = false;
++	bool fnafVisualImage = false;
+ 
+ 	int GetDepthBuffer(int w, int h);
+ 
+diff --git a/doom/src/main/jni/engine/gzdoom/src/common/rendering/gles/gles_renderstate.cpp b/doom/src/main/jni/engine/gzdoom/src/common/rendering/gles/gles_renderstate.cpp
+index c833317..f12e624 100644
+--- a/doom/src/main/jni/engine/gzdoom/src/common/rendering/gles/gles_renderstate.cpp
++++ b/doom/src/main/jni/engine/gzdoom/src/common/rendering/gles/gles_renderstate.cpp
+@@ -34,6 +34,19 @@
+ #include "c_dispatch.h"
+ #include <cstring>
+ 
++CVAR(Bool, fnaf_gl_reuse, true, 0)
++static uint64_t fnaf_light_updates = 0, fnaf_light_reuses = 0;
++static uint64_t fnaf_bias_updates = 0, fnaf_bias_reuses = 0;
++static uint64_t fnaf_normal_updates = 0, fnaf_normal_reuses = 0;
++CCMD(fnaf_render_reuse_stats)
++{
++	Printf("FNAF_RENDER_REUSE lights=%llu/%llu bias=%llu/%llu normal=%llu/%llu enabled=%d\n",
++		static_cast<unsigned long long>(fnaf_light_updates), static_cast<unsigned long long>(fnaf_light_reuses),
++		static_cast<unsigned long long>(fnaf_bias_updates), static_cast<unsigned long long>(fnaf_bias_reuses),
++		static_cast<unsigned long long>(fnaf_normal_updates), static_cast<unsigned long long>(fnaf_normal_reuses),
++		int(fnaf_gl_reuse));
++}
++
+ static uint64_t fnaf_bone_uploads = 0, fnaf_bone_reuses = 0;
+ CCMD(fnaf_bone_stats)
+ {
+@@ -72,6 +85,7 @@ void FGLRenderState::Reset()
+ 		mFnafBoneTexture = 0;
+ 	}
+ 	mFnafLastBoneCount = -1;
++	mFnafHaveNormalMatrix = false;
+ 	mVertexBuffer = mCurrentVertexBuffer = nullptr;
+ 	mGlossiness = 0.0f;
+ 	mSpecularLevel = 0.0f;
+@@ -254,7 +268,8 @@ bool FGLRenderState::ApplyShader()
+ 	activeShader->cur->muInterpolationFactor.Set(mStreamData.uInterpolationFactor);
+ 	activeShader->cur->muTimer.Set((double)(screen->FrameTime - firstFrame) * (double)mShaderTimer / 1000.);
+ 	activeShader->cur->muAlphaThreshold.Set(mAlphaThreshold);
+-	activeShader->cur->muBoneIndexBase.Set(-1);
++	// Set the final bone index once below, after determining palette availability.
++	int fnafFinalBoneIndex = -1;
+ 	activeShader->cur->muClipSplit.Set(mClipSplit);
+ 	activeShader->cur->muSpecularMaterial.Set(mGlossiness, mSpecularLevel);
+ 	activeShader->cur->muAddColor.Set(mStreamData.uAddColor);
+@@ -323,9 +338,16 @@ bool FGLRenderState::ApplyShader()
+ 	if (mModelMatrixEnabled)
+ 	{
+ 		matrixToGL(mModelMatrix, activeShader->cur->modelmatrix_index);
+-		VSMatrix norm;
+-		norm.computeNormalMatrix(mModelMatrix);
+-		matrixToGL(norm, activeShader->cur->normalmodelmatrix_index);
++		if (!fnaf_gl_reuse || !mFnafHaveNormalMatrix ||
++			std::memcmp(mFnafLastModelMatrix.get(), mModelMatrix.get(), 16 * sizeof(FLOATTYPE)) != 0)
++		{
++			mFnafLastNormalMatrix.computeNormalMatrix(mModelMatrix);
++			mFnafLastModelMatrix = mModelMatrix;
++			mFnafHaveNormalMatrix = true;
++			++fnaf_normal_updates;
++		}
++		else ++fnaf_normal_reuses;
++		matrixToGL(mFnafLastNormalMatrix, activeShader->cur->normalmodelmatrix_index);
+ 		activeShader->cur->currentModelMatrixState = true;
+ 	}
+ 	else if (activeShader->cur->currentModelMatrixState)
+@@ -344,7 +366,20 @@ bool FGLRenderState::ApplyShader()
+ 		if (totalVectors > (int)gles.numlightvectors)
+ 			totalVectors = gles.numlightvectors;
+ 
+-		glUniform4fv(activeShader->cur->lights_index, totalVectors, lightPtr);
++		// GLES uniforms are per linked program and remain unchanged across draws.
++		// A byte comparison is required: light-buffer indices are recycled.
++		if (totalVectors > 0 && activeShader->cur->lights_index >= 0)
++		{
++			auto& cache = activeShader->cur->fnafLightCache;
++			const size_t floats = size_t(totalVectors) * 4;
++			if (!fnaf_gl_reuse || !cache.Matches(lightPtr, floats))
++			{
++				glUniform4fv(activeShader->cur->lights_index, totalVectors, lightPtr);
++				if (fnaf_gl_reuse) cache.Remember(lightPtr, floats); else cache.Invalidate();
++				++fnaf_light_updates;
++			}
++			else ++fnaf_light_reuses;
++		}
+ 
+ 		int range[4] = { 0, 
+ 			modLights * LIGHT_VEC4_NUM, 
+@@ -396,8 +431,8 @@ bool FGLRenderState::ApplyShader()
+ 			}
+ 			else ++fnaf_bone_reuses;
+ 			glActiveTexture(previousTexture);
+-			glUniform1i(activeShader->cur->fnaf_bone_texture_index, FNAF_BONE_TEXTURE_UNIT);
+-			activeShader->cur->muBoneIndexBase.Set(0);
++			// The sampler's unit is initialized when this program links.
++			fnafFinalBoneIndex = 0;
+ 		}
+ 	}
+ 	else if (gles.glesMode >= GLES_MODE_OGL3)
+@@ -413,10 +448,11 @@ bool FGLRenderState::ApplyShader()
+ 
+ 			glUniformMatrix4fv(activeShader->cur->bones_index, number, false, bonesPtr);
+ 
+-			activeShader->cur->muBoneIndexBase.Set(mBoneIndexBase);
++			fnafFinalBoneIndex = mBoneIndexBase;
+ 		}
+ 	}
+ 
++	activeShader->cur->muBoneIndexBase.Set(fnafFinalBoneIndex);
+ 	return true;
+ }
+ 
+@@ -447,16 +483,21 @@ void FGLRenderState::ApplyState()
+ 	}
+ 
+ 
+-	if (mBias.mFactor == 0 && mBias.mUnits == 0)
++	if (!fnaf_gl_reuse || mBias.mChanged)
+ 	{
+-		glDisable(GL_POLYGON_OFFSET_FILL);
+-	}
+-	else
+-	{
+-		glEnable(GL_POLYGON_OFFSET_FILL);
++		if (mBias.mFactor == 0 && mBias.mUnits == 0)
++		{
++			glDisable(GL_POLYGON_OFFSET_FILL);
++		}
++		else
++		{
++			glEnable(GL_POLYGON_OFFSET_FILL);
++		}
++		glPolygonOffset(mBias.mFactor, mBias.mUnits);
++		mBias.mChanged = false;
++		++fnaf_bias_updates;
+ 	}
+-	glPolygonOffset(mBias.mFactor, mBias.mUnits);
+-	mBias.mChanged = false;
++	else ++fnaf_bias_reuses;
+ }
+ 
+ void FGLRenderState::ApplyBuffers()
+diff --git a/doom/src/main/jni/engine/gzdoom/src/common/rendering/gles/gles_renderstate.h b/doom/src/main/jni/engine/gzdoom/src/common/rendering/gles/gles_renderstate.h
+index 2838647..13ab6fa 100644
+--- a/doom/src/main/jni/engine/gzdoom/src/common/rendering/gles/gles_renderstate.h
++++ b/doom/src/main/jni/engine/gzdoom/src/common/rendering/gles/gles_renderstate.h
+@@ -67,6 +67,10 @@ class FGLRenderState final : public FRenderState
+ 	// change on any render pass and buffer indices are reused every frame.
+ 	float mFnafLastBones[16 * 256] = {};
+ 	int mFnafLastBoneCount = -1;
++	// Normal transform depends only on the exact model-matrix bytes.
++	VSMatrix mFnafLastModelMatrix;
++	VSMatrix mFnafLastNormalMatrix;
++	bool mFnafHaveNormalMatrix = false;
+ 
+ 	IVertexBuffer *mCurrentVertexBuffer;
+ 	int mCurrentVertexOffsets[2];	// one per binding point
+diff --git a/doom/src/main/jni/engine/gzdoom/src/common/rendering/gles/gles_samplers.cpp b/doom/src/main/jni/engine/gzdoom/src/common/rendering/gles/gles_samplers.cpp
+index 1f77880..a20954f 100644
+--- a/doom/src/main/jni/engine/gzdoom/src/common/rendering/gles/gles_samplers.cpp
++++ b/doom/src/main/jni/engine/gzdoom/src/common/rendering/gles/gles_samplers.cpp
+@@ -52,14 +52,15 @@ void FSamplerManager::UnbindAll()
+ 
+ }
+ 
+-uint8_t FSamplerManager::Bind(int texunit, int num, int lastval)
++uint8_t FSamplerManager::Bind(int texunit, int num, int lastval, bool fnafVisualImage)
+ {
+ 
+-	int filter = sysCallbacks.DisableTextureFilter && sysCallbacks.DisableTextureFilter() ? 0 : gl_texture_filter;
++	int filter = FnafEffectiveTextureFilter(fnafVisualImage);
++	const bool fnafLowMip = fnafVisualImage && int(gl_texture_filter) == 0 && filter == 1;
+ 	bool anisoAvailable = gles.anistropicFilterAvailable &&
+ 	                      (!sysCallbacks.DisableTextureFilter || !sysCallbacks.DisableTextureFilter());
+ 	float aniso =
+-		filter <= 0 || (sysCallbacks.DisableAnisotropicFiltering && sysCallbacks.DisableAnisotropicFiltering())
++		filter <= 0 || fnafLowMip || (sysCallbacks.DisableAnisotropicFiltering && sysCallbacks.DisableAnisotropicFiltering())
+ 			? 1.0f
+ 			: gl_texture_filter_anisotropic;
+ 
+diff --git a/doom/src/main/jni/engine/gzdoom/src/common/rendering/gles/gles_samplers.h b/doom/src/main/jni/engine/gzdoom/src/common/rendering/gles/gles_samplers.h
+index c9d640d..29d37fa 100644
+--- a/doom/src/main/jni/engine/gzdoom/src/common/rendering/gles/gles_samplers.h
++++ b/doom/src/main/jni/engine/gzdoom/src/common/rendering/gles/gles_samplers.h
+@@ -40,7 +40,7 @@ public:
+ 	FSamplerManager();
+ 	~FSamplerManager();
+ 
+-	uint8_t Bind(int texunit, int num, int lastval);
++	uint8_t Bind(int texunit, int num, int lastval, bool fnafVisualImage = false);
+ 	void SetTextureFilterMode();
+ 
+ };
+diff --git a/doom/src/main/jni/engine/gzdoom/src/common/rendering/gles/gles_shader.cpp b/doom/src/main/jni/engine/gzdoom/src/common/rendering/gles/gles_shader.cpp
+index 99cb94e..d8c5845 100644
+--- a/doom/src/main/jni/engine/gzdoom/src/common/rendering/gles/gles_shader.cpp
++++ b/doom/src/main/jni/engine/gzdoom/src/common/rendering/gles/gles_shader.cpp
+@@ -631,6 +631,9 @@ bool FShader::Load(const char * name, const char * vert_prog_lump_, const char *
+ 		if (tempindex >= 0) glUniform1i(tempindex, i - 1);
+ 	}
+ 
++	if (gles.fnafBoneTextureSupport && shaderData->fnaf_bone_texture_index >= 0)
++		glUniform1i(shaderData->fnaf_bone_texture_index, FNAF_BONE_TEXTURE_UNIT);
++
+ 	int shadowmapindex = glGetUniformLocation(shaderData->hShader, "ShadowMap");
+ 	if (shadowmapindex >= 0) glUniform1i(shadowmapindex, 16);
+ 
+diff --git a/doom/src/main/jni/engine/gzdoom/src/common/rendering/gles/gles_shader.h b/doom/src/main/jni/engine/gzdoom/src/common/rendering/gles/gles_shader.h
+index 31c95b2..ef87483 100644
+--- a/doom/src/main/jni/engine/gzdoom/src/common/rendering/gles/gles_shader.h
++++ b/doom/src/main/jni/engine/gzdoom/src/common/rendering/gles/gles_shader.h
+@@ -19,6 +19,7 @@
+ #define __GL_SHADERS_H__
+ 
+ #include <map>
++#include "fnaf_light_cache.h"
+ 
+ #include "gles_renderstate.h"
+ #include "name.h"
+@@ -354,6 +355,7 @@ public: class ShaderVariantData
+ 		FUniform4f muFixedColormapRange;
+ 
+ 
++		FnafLightCache::UploadCache fnafLightCache;
+ 		int lights_index = 0;
+ 		int bones_index = 0;
+ 		int fnaf_bone_texture_index = -1;
+diff --git a/doom/src/main/jni/engine/gzdoom/src/r_data/fnaf_camera_scheduler.h b/doom/src/main/jni/engine/gzdoom/src/r_data/fnaf_camera_scheduler.h
+new file mode 100644
+index 0000000..89e85c2
+--- /dev/null
++++ b/doom/src/main/jni/engine/gzdoom/src/r_data/fnaf_camera_scheduler.h
+@@ -0,0 +1,33 @@
++// Optional security-screen-only render throttling, never a simulation throttle.
++#pragma once
++#include <cstdint>
++namespace FnafCameraScheduler {
++struct State {
++    std::uint64_t lastTime = 0;
++    unsigned skipCount = 0;
++    bool rendered = false;
++    bool visible = false;
++};
++inline char Upper(char c) { return (c >= 'a' && c <= 'z') ? char(c - ('a' - 'A')) : c; }
++inline bool IsSecurityScreen(const char* name) {
++    if (!name) return false;
++    const char prefix[] = "TCAMTEX";
++    for (unsigned i = 0; i < 7; ++i) if (!name[i] || Upper(name[i]) != prefix[i]) return false;
++    return name[7] >= '1' && name[7] <= '7' && name[8] == 0;
++}
++// At most 5 updates/s for selected screens, and never on two adjacent render
++// frames. First display, a changed camera and reappearance update immediately.
++// Skipped textures remain marked dirty for a later frame.
++inline bool ShouldRender(State& state, bool saver, bool isSecurity, bool first,
++                         bool currentlyVisible, std::uint64_t now) {
++    if (!currentlyVisible) { state.visible = false; return false; }
++    bool resume = !state.visible;
++    state.visible = true;
++    if (!saver || !isSecurity || first || resume || !state.rendered || now < state.lastTime) {
++        state.lastTime = now; state.skipCount = 0; state.rendered = true; return true;
++    }
++    if (state.skipCount == 0) { state.skipCount = 1; return false; }
++    if (now - state.lastTime < 200) return false;
++    state.lastTime = now; state.skipCount = 0; return true;
++}
++}
+diff --git a/doom/src/main/jni/engine/gzdoom/src/r_data/r_canvastexture.cpp b/doom/src/main/jni/engine/gzdoom/src/r_data/r_canvastexture.cpp
+index 28aec2a..391c8be 100644
+--- a/doom/src/main/jni/engine/gzdoom/src/r_data/r_canvastexture.cpp
++++ b/doom/src/main/jni/engine/gzdoom/src/r_data/r_canvastexture.cpp
+@@ -28,6 +28,19 @@
+ #include "serializer.h"
+ #include "serialize_obj.h"
+ #include "texturemanager.h"
++#include "c_cvars.h"
++#include "c_dispatch.h"
++#include "i_time.h"
++#include "printf.h"
++
++CVAR(Bool, fnaf_camera_saver, false, 0)
++static uint64_t fnaf_camera_draws = 0, fnaf_camera_skips = 0;
++CCMD(fnaf_camera_saver_stats)
++{
++	Printf("FNAF_CAMERA_SAVER rendered=%llu skipped=%llu enabled=%d\n",
++		static_cast<unsigned long long>(fnaf_camera_draws),
++		static_cast<unsigned long long>(fnaf_camera_skips), int(fnaf_camera_saver));
++}
+ 
+ //==========================================================================
+ //
+@@ -73,6 +86,8 @@ void FCanvasTextureInfo::Add (AActor *viewpoint, FTextureID picnum, double fov)
+ 	probe->Texture = texture;
+ 	probe->PicNum = picnum;
+ 	probe->FOV = fov;
++	probe->FnafSecurityScreen = FnafCameraScheduler::IsSecurityScreen(gt->GetName().GetChars());
++	probe->FnafSchedule = {};
+ 	texture->bFirstUpdate = true;
+ }
+ 
+@@ -108,12 +123,19 @@ void SetCameraToTexture(AActor *viewpoint, const FString &texturename, double fo
+ 
+ void FCanvasTextureInfo::UpdateAll(std::function<void(AActor *, FCanvasTexture *, double fov)> callback)
+ {
++	const bool saver = bool(fnaf_camera_saver);
++	const uint64_t now = saver ? I_msTime() : 0;
+ 	for (auto &probe : List)
+ 	{
+-		if (probe.Viewpoint != nullptr && probe.Texture->bNeedsUpdate)
++		const bool visible = probe.Viewpoint != nullptr && probe.Texture != nullptr && probe.Texture->bNeedsUpdate;
++		bool draw = FnafCameraScheduler::ShouldRender(probe.FnafSchedule, saver,
++			probe.FnafSecurityScreen, probe.Texture != nullptr && probe.Texture->bFirstUpdate, visible, now);
++		if (draw)
+ 		{
+ 			callback(probe.Viewpoint, probe.Texture, probe.FOV);
++			if (saver && probe.FnafSecurityScreen) ++fnaf_camera_draws;
+ 		}
++		else if (visible && saver && probe.FnafSecurityScreen) ++fnaf_camera_skips;
+ 	}
+ }
+ 
+diff --git a/doom/src/main/jni/engine/gzdoom/src/r_data/r_canvastexture.h b/doom/src/main/jni/engine/gzdoom/src/r_data/r_canvastexture.h
+index f2fb1ff..b8a4e2d 100644
+--- a/doom/src/main/jni/engine/gzdoom/src/r_data/r_canvastexture.h
++++ b/doom/src/main/jni/engine/gzdoom/src/r_data/r_canvastexture.h
+@@ -24,6 +24,8 @@
+ 
+ #pragma once
+ 
++#include "fnaf_camera_scheduler.h"
++
+ class FCanvas;
+ class FCanvasTexture;
+ 
+@@ -34,6 +36,8 @@ struct FCanvasTextureEntry
+ 	FCanvasTexture *Texture;
+ 	FTextureID PicNum;
+ 	double FOV;
++	bool FnafSecurityScreen = false;
++	FnafCameraScheduler::State FnafSchedule;
+ };
+ 
+ 
+diff --git a/doom/src/main/jni/engine/gzdoom/src/rendering/hwrenderer/fnaf_spot_cache.h b/doom/src/main/jni/engine/gzdoom/src/rendering/hwrenderer/fnaf_spot_cache.h
+new file mode 100644
+index 0000000..3164a79
+--- /dev/null
++++ b/doom/src/main/jni/engine/gzdoom/src/rendering/hwrenderer/fnaf_spot_cache.h
+@@ -0,0 +1,30 @@
++// Thread-local, exact-angle spotlight math cache. This does not choose lights.
++#pragma once
++#include <cstdint>
++#include <cstring>
++namespace FnafSpotCache {
++struct Result { float inner, outer, x, y, z; };
++class Cache {
++    struct Entry { std::uint64_t key[4]{}; Result value{}; bool valid = false; };
++    Entry entries[64]{};
++public:
++    // The key is the actual bit pattern of the four angles, never an actor or
++    // frame index. NaN and +/-0 are distinct; direct-map collisions recompute.
++    template<class Compute> Result Get(double inner, double outer, double yaw,
++                                        double pitch, bool enabled, Compute compute,
++                                        bool& reused) {
++        const double values[4] = {inner, outer, yaw, pitch};
++        std::uint64_t bits[4]; std::memcpy(bits, values, sizeof(bits));
++        std::uint64_t hash = 1469598103934665603ULL;
++        for (auto b : bits) { hash ^= b; hash *= 1099511628211ULL; }
++        Entry& e = entries[(hash ^ (hash >> 32)) & 63];
++        if (enabled && e.valid && std::memcmp(e.key, bits, sizeof(bits)) == 0) {
++            reused = true; return e.value;
++        }
++        reused = false;
++        Result result = compute();
++        if (enabled) { std::memcpy(e.key, bits, sizeof(bits)); e.value = result; e.valid = true; }
++        return result;
++    }
++};
++}
+diff --git a/doom/src/main/jni/engine/gzdoom/src/rendering/hwrenderer/hw_dynlightdata.cpp b/doom/src/main/jni/engine/gzdoom/src/rendering/hwrenderer/hw_dynlightdata.cpp
+index efc0b68..7027c1e 100644
+--- a/doom/src/main/jni/engine/gzdoom/src/rendering/hwrenderer/hw_dynlightdata.cpp
++++ b/doom/src/main/jni/engine/gzdoom/src/rendering/hwrenderer/hw_dynlightdata.cpp
+@@ -21,6 +21,20 @@
+ #include"hw_cvars.h"
+ #include "v_video.h"
+ #include "hwrenderer/scene/hw_drawstructs.h"
++#include "fnaf_spot_cache.h"
++#include "c_dispatch.h"
++#include "printf.h"
++
++CVAR(Bool, fnaf_spot_reuse, true, 0)
++// Light collection may run on multiple threads; each cache and counter is local.
++thread_local FnafSpotCache::Cache fnafSpotCache;
++thread_local uint64_t fnaf_spot_computes = 0, fnaf_spot_reuses = 0;
++CCMD(fnaf_spot_reuse_stats)
++{
++    Printf("FNAF_SPOT_REUSE computed=%llu reused=%llu enabled=%d\n",
++        static_cast<unsigned long long>(fnaf_spot_computes),
++        static_cast<unsigned long long>(fnaf_spot_reuses), int(fnaf_spot_reuse));
++}
+ 
+ // If we want to share the array to avoid constant allocations it needs to be thread local unless it'd be littered with expensive synchronization.
+ thread_local FDynLightData lightdata;
+@@ -121,15 +135,24 @@ void AddLightToList(FDynLightData &dld, int group, FDynamicLight * light, bool f
+ 	if (light->IsSpot())
+ 	{
+ 		lightType = 1.0f;
+-		spotInnerAngle = (float)light->pSpotInnerAngle->Cos();
+-		spotOuterAngle = (float)light->pSpotOuterAngle->Cos();
+-
+-		DAngle negPitch = -light->Pitch;
+-		DAngle Angle = light->Yaw;
+-		double xzLen = negPitch.Cos();
+-		spotDirX = float(-Angle.Cos() * xzLen);
+-		spotDirY = float(-negPitch.Sin());
+-		spotDirZ = float(-Angle.Sin() * xzLen);
++		bool reused = false;
++		auto spot = fnafSpotCache.Get(light->pSpotInnerAngle->Degrees(),
++			light->pSpotOuterAngle->Degrees(), light->Yaw.Degrees(), light->Pitch.Degrees(),
++			bool(fnaf_spot_reuse), [&]() {
++				FnafSpotCache::Result value;
++				value.inner = (float)light->pSpotInnerAngle->Cos();
++				value.outer = (float)light->pSpotOuterAngle->Cos();
++				DAngle negPitch = -light->Pitch;
++				DAngle Angle = light->Yaw;
++				double xzLen = negPitch.Cos();
++				value.x = float(-Angle.Cos() * xzLen);
++				value.y = float(-negPitch.Sin());
++				value.z = float(-Angle.Sin() * xzLen);
++				return value;
++			}, reused);
++		if (reused) ++fnaf_spot_reuses; else ++fnaf_spot_computes;
++		spotInnerAngle = spot.inner; spotOuterAngle = spot.outer;
++		spotDirX = spot.x; spotDirY = spot.y; spotDirZ = spot.z;
+ 	}
+ 
+ 	float *data = &dld.arrays[i][dld.arrays[i].Reserve(16)];

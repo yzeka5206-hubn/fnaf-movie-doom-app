@@ -11,8 +11,13 @@ from pathlib import Path
 BUILD_MARKER = b"FNAF_DIAG_V7_2026"
 REQUIRED_DEX_MARKERS = (
     BUILD_MARKER,
-    b"0.9.6-fps60-test",
+    b"0.9.7-fps-research",
     b"fnaf_outside_black",
+    b"fnaf_camera_saver",
+    b"fnaf_light_textures",
+    b"fnaf_mipmap_low",
+    b"KAMERA: TASARRUF",
+    b"DOKU: FPS",
     b"fnaf_static_cull",
     b"FnafFrameRateHint",
     b"vid_fps",
@@ -58,7 +63,8 @@ SHADER_MEMBER = "shaders_gles/glsl/main.vp"
 SKELETAL_SHADER_SHA256 = "72c457c6f39614b02cb5bf024b363a3375a7c79ef5385519b536a71c0bec8ab5"
 NATIVE_BONE_MARKER = b"FNAF skeletal GLES palette:"
 NATIVE_OPT_MARKERS = (b"FNAF_CULL_STATS", b"FNAF_TEXTURE_STATS", b"FNAF_BONE_STATS",
-                      b"FNAF_OUTSIDE_STATS", b"FNAF_STATIC_CULL_STATS")
+                      b"FNAF_OUTSIDE_STATS", b"FNAF_STATIC_CULL_STATS",
+                      b"FNAF_RENDER_REUSE", b"FNAF_SPOT_REUSE", b"FNAF_MIPMAP_STATS", b"FNAF_CAMERA_SAVER")
 NATIVE_LIBRARIES = (
     "lib/arm64-v8a/libuzdoom.so",
 )

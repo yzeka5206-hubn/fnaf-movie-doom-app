@@ -47,7 +47,7 @@ public final class FnafLaunchProfile {
 
     public static String buildArgs(String map, int difficulty, int streamer, int graphics,
                                    int shaders, int halloween, int christmas, int height,
-                                   boolean outsideBlack) {
+                                   boolean outsideBlack, boolean lightTextures, boolean cameraSaver) {
         if (!isValid(map, difficulty, streamer, graphics, shaders, halloween, christmas, height))
             throw new IllegalArgumentException("Invalid single-player selection");
 
@@ -78,10 +78,16 @@ public final class FnafLaunchProfile {
                 " +set fnaf_static_cull 1" +
                 // Black only known exterior views in NIGHT1..5; render-only.
                 " +set fnaf_outside_black " + (outsideBlack ? 1 : 0) +
-                // A slightly smaller cap for the lowest 480p profile saves
-                // texture upload/memory; 720p keeps its previous 1024px cap.
-                // Camera canvases, fonts and original menus are excluded.
-                " +set fnaf_max_image_size " + (graphics == 0 ? (height == 480 ? 768 : 1024) : 0) +
+                // Optional FPS texture profile: cap only ordinary world images;
+                // menus, font sprites, indexed assets and camera canvases are excluded.
+                // Mipmaps can reduce sampling bandwidth but are not always faster.
+                " +set fnaf_max_image_size " + (graphics == 0
+                    ? (lightTextures ? (height == 480 ? 512 : 768) : (height == 480 ? 768 : 1024)) : 0) +
+                " +set fnaf_mipmap_low " + (lightTextures ? 1 : 0) +
+                // This only throttles TCAMTEX1..7 screen refresh, not game ticks.
+                " +set fnaf_camera_saver " + (cameraSaver ? 1 : 0) +
+                " +set fnaf_gl_reuse 1" +
+                " +set fnaf_spot_reuse 1" +
                 " +set gl_texture_filter " + tex[graphics] +
                 " +set gl_light_shadowmap " + (graphics == 0 ? 0 : 1) +
                 " +set gl_shadowmap_quality " + shadowMap[graphics] +

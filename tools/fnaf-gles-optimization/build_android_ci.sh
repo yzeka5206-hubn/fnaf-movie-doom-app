@@ -23,6 +23,13 @@ tar -xzf "$WORK/source.tar.gz" --strip-components=1 -C "$WORK/src"
  git apply "$REPO/tools/fnaf-fps-60/engine.patch"
  git apply --reverse --check "$REPO/tools/fnaf-fps-60/engine.patch"
  cmp doom/src/main/jni/engine/gzdoom/src/common/models/fnaf_static_cull.h "$REPO/tools/fnaf-fps-60/fnaf_static_cull.h"
+ git apply --check "$REPO/tools/fnaf-fps-research/engine.patch"
+ git apply "$REPO/tools/fnaf-fps-research/engine.patch"
+ git apply --reverse --check "$REPO/tools/fnaf-fps-research/engine.patch"
+ cmp doom/src/main/jni/engine/gzdoom/src/common/rendering/gles/fnaf_light_cache.h "$REPO/tools/fnaf-fps-research/fnaf_light_cache.h"
+ cmp doom/src/main/jni/engine/gzdoom/src/common/rendering/gles/fnaf_texture_policy.h "$REPO/tools/fnaf-fps-research/fnaf_texture_policy.h"
+ cmp doom/src/main/jni/engine/gzdoom/src/r_data/fnaf_camera_scheduler.h "$REPO/tools/fnaf-fps-research/fnaf_camera_scheduler.h"
+ cmp doom/src/main/jni/engine/gzdoom/src/rendering/hwrenderer/fnaf_spot_cache.h "$REPO/tools/fnaf-fps-research/fnaf_spot_cache.h"
 )
 "$NDK/ndk-build" -C "$WORK/src/doom/src/main" APP_ABI=arm64-v8a -j4 > "$WORK/ndk-build.log" 2>&1 || { tail -150 "$WORK/ndk-build.log"; exit 1; }
 SO="$WORK/src/doom/src/main/libs/arm64-v8a/libuzdoom.so"

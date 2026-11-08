@@ -19,6 +19,9 @@ class FPS60Contract(unittest.TestCase):
         p=(ROOT/'doom/src/main/java/com/msa/freedoom/FnafLaunchProfile.java').read_text()
         self.assertIn('+set fnaf_outside_black ',p)
         self.assertIn('(height == 480 ? 768 : 1024)',p)
+        self.assertIn('(height == 480 ? 512 : 768)',p)
+        self.assertIn('+set fnaf_mipmap_low ',p)
+        self.assertIn('+set fnaf_camera_saver ',p)
         self.assertIn('+set vid_fps 1',p)
         self.assertIn('+set cl_capfps 0',p)
 

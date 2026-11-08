@@ -27,9 +27,11 @@ public final class FnafLaunchProfileTest {
         for (String map : new String[]{"OUTSIDE", "NIGHT1", "NIGHT2", "NIGHT3", "NIGHT4", "NIGHT5"})
             for (int difficulty=0; difficulty<3; difficulty++) for (int streamer=0; streamer<2; streamer++)
                 for (int graphics=0; graphics<5; graphics++) for (int height : new int[]{480,720})
-                    for (boolean outsideBlack : new boolean[]{false, true}) {
+                    for (boolean outsideBlack : new boolean[]{false, true})
+                    for (boolean lightTextures : new boolean[]{false, true})
+                    for (boolean cameraSaver : new boolean[]{false, true}) {
                     check(FnafLaunchProfile.isValid(map,difficulty,streamer,graphics,0,0,0,height), "valid rejected");
-                    String args = FnafLaunchProfile.buildArgs(map,difficulty,streamer,graphics,0,0,0,height,outsideBlack);
+                    String args = FnafLaunchProfile.buildArgs(map,difficulty,streamer,graphics,0,0,0,height,outsideBlack,lightTextures,cameraSaver);
                     check(args.contains("+set vid_scalefactor 1"), args);
                     check(args.contains("+set gl_precache 0"), args);
                     check(args.contains("+set fnaf_iqm_cull 1"), args);
@@ -37,7 +39,10 @@ public final class FnafLaunchProfileTest {
                     check(args.contains("+set fnaf_outside_black " + (outsideBlack ? 1 : 0) + " "), args);
                     check(args.indexOf("+set fnaf_outside_black") < args.indexOf("+map "), args);
                     check(args.contains("+set fnaf_max_image_size " +
-                        (graphics == 0 ? (height == 480 ? 768 : 1024) : 0) + " "), args);
+                        (graphics == 0 ? (lightTextures ? (height == 480 ? 512 : 768) : (height == 480 ? 768 : 1024)) : 0) + " "), args);
+                    check(args.contains("+set fnaf_mipmap_low " + (lightTextures ? 1 : 0) + " "), args);
+                    check(args.contains("+set fnaf_camera_saver " + (cameraSaver ? 1 : 0) + " "), args);
+                    check(args.contains("+set fnaf_gl_reuse 1"), args);
                     check(args.contains("+map " + map), args);
                     check(!args.contains("-host") && !args.contains("-join"), args);
                     n++;

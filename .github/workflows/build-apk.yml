@@ -48,6 +48,8 @@ jobs:
           g++ -std=c++17 -O2 -Wall -Wextra -Werror -Itools/fnaf-gles-optimization \
             tools/fnaf-fps-60/host_test.cpp -o "$RUNNER_TEMP/fnaf-tests/fps60"
           "$RUNNER_TEMP/fnaf-tests/fps60"
+          g++ -std=c++17 -O2 -Wall -Wextra -Werror tools/fnaf-fps-research/host_test.cpp -o "$RUNNER_TEMP/fnaf-tests/fps-research"
+          "$RUNNER_TEMP/fnaf-tests/fps-research"
           OPENBLAS_NUM_THREADS=1 python3 tools/fnaf-fps-60/test_real_models.py \
             doom/src/main/assets/game/FiveNightsAtFreddysDoomMOVIE.pk3 \
             doom/src/main/assets/game/fnaf-model-frames-v1.pk3
