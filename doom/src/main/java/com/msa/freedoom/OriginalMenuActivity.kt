@@ -28,6 +28,9 @@ class OriginalMenuActivity : SDLActivity() {
     private var outsideBlack = true
     private var lightTextures = true
     private var cameraSaver = false
+    // Deliberately session-only: a broken driver or crash cannot make Vulkan
+    // persist as the default. Every new menu instance starts on OpenGL ES.
+    private var vulkan = false
 
     override fun useOpenTouch(): Boolean = false
     override fun getLibraries(): Array<String> = arrayOf("hidapi", "saffal", "openal", "SDL2", "Chowdren", "FnafMenuRunner")
@@ -120,7 +123,7 @@ class OriginalMenuActivity : SDLActivity() {
                 getSharedPreferences("fnaf_original_menu", Context.MODE_PRIVATE)
                     .edit().putBoolean("light_textures", lightTextures).commit()
                 Toast.makeText(this@OriginalMenuActivity,
-                    if (lightTextures) "Daha küçük dünya dokuları ve mipmap" else "Önceki doku ayarları",
+                    if (lightTextures) "Daha küçük dünya dokuları" else "Önceki doku ayarları",
                     Toast.LENGTH_SHORT).show()
             }
         }
@@ -135,6 +138,17 @@ class OriginalMenuActivity : SDLActivity() {
                 Toast.makeText(this@OriginalMenuActivity,
                     if (cameraSaver) "Güvenlik ekranları daha yavaş yenilenir" else "Güvenlik ekranları normal yenilenir",
                     Toast.LENGTH_SHORT).show()
+            }
+        }
+        val rendererButton = styledButton("API: OPENGL ES").apply {
+            textSize = 10f
+            contentDescription = "Grafik API seçimi: OpenGL ES veya deneysel Vulkan"
+            setOnClickListener {
+                vulkan = !vulkan
+                text = if (vulkan) "API: VULKAN" else "API: OPENGL ES"
+                Toast.makeText(this@OriginalMenuActivity,
+                    if (vulkan) "Vulkan deneysel; açılmazsa menüden OpenGL ES seç"
+                    else "OpenGL ES seçildi", Toast.LENGTH_LONG).show()
             }
         }
         val backup = styledButton("YEDEK").apply {
@@ -161,6 +175,10 @@ class OriginalMenuActivity : SDLActivity() {
                 marginStart = (8 * dp).toInt()
             }
             addView(cameraButton, five)
+            val six = LinearLayout.LayoutParams((112 * dp).toInt(), (36 * dp).toInt()).apply {
+                marginStart = (8 * dp).toInt()
+            }
+            addView(rendererButton, six)
         }
         val params = FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT,
             ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply {
@@ -176,7 +194,7 @@ class OriginalMenuActivity : SDLActivity() {
         runOnUiThread {
             if (isFinishing || resultSent.get()) return@runOnUiThread
             val selected = FnafMenuSelection(map, difficulty, streamer, graphics, shaders,
-                halloween, christmas, resolutionHeight, outsideBlack, lightTextures, cameraSaver)
+                halloween, christmas, resolutionHeight, outsideBlack, lightTextures, cameraSaver, vulkan)
             if (!selected.isValid()) {
                 Toast.makeText(this, "Geçersiz oyun seçimi.", Toast.LENGTH_LONG).show()
                 return@runOnUiThread

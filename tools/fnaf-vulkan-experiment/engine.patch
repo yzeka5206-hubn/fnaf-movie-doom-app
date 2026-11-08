@@ -1,0 +1,215 @@
+diff --git a/doom/src/main/jni/Clibs_OpenTouch/android_jni_inc.cpp b/doom/src/main/jni/Clibs_OpenTouch/android_jni_inc.cpp
+index b857d30..4e55604 100644
+--- a/doom/src/main/jni/Clibs_OpenTouch/android_jni_inc.cpp
++++ b/doom/src/main/jni/Clibs_OpenTouch/android_jni_inc.cpp
+@@ -589,11 +589,31 @@ int getGameType()
+     return gameType;
+ }
+ 
++// Our FNAF touch overlay is a native Android View, so Vulkan must not call
++// MobileTouchControls' OpenGL drawing. It still needs the per-frame input tick.
++void FnafMobileVulkanFrame(void)
++{
++    touchInterface.newGameFrame();
++    game_finished_load = true;
++    static bool reported = false;
++    if (!reported) {
++        reported = true;
++        LOGI("FNAF_NATIVE_VULKAN_FIRST_FRAME");
++        Android_JNI_SendMessage(0x8015, 1);
++    }
++}
++
+ void frameControlsSDLCallback(void)
+ {
+     touchInterface.newGameFrame();
+     touchInterface.frameControls((game_vulkan == false), (touch_surface_view == false)); // FRAMEBUFFER = true, TOUCH = true
+     game_finished_load = true;
++    static bool reported = false;
++    if (!reported) {
++        reported = true;
++        LOGI("FNAF_NATIVE_GLES_FIRST_FRAME");
++        Android_JNI_SendMessage(0x8015, 2);
++    }
+ }
+ 
+ void showKeyboardCallbackSDLCallback(int show)
+diff --git a/doom/src/main/jni/engine/gzdoom/libraries/ZVulkan/include/zvulkan/fnaf_vulkan_compat.h b/doom/src/main/jni/engine/gzdoom/libraries/ZVulkan/include/zvulkan/fnaf_vulkan_compat.h
+new file mode 100644
+index 0000000..3474788
+--- /dev/null
++++ b/doom/src/main/jni/engine/gzdoom/libraries/ZVulkan/include/zvulkan/fnaf_vulkan_compat.h
+@@ -0,0 +1,16 @@
++// FNAF mobile Vulkan compatibility; no GL or API emulation.
++#pragma once
++#include <cstdint>
++namespace FnafVulkanCompat {
++inline bool DeviceMeetsRequirements(bool mobile, bool anisotropy, bool fragmentAtomics,
++                                    bool multiDrawIndirect, bool independentBlend) {
++    return anisotropy && fragmentAtomics && independentBlend && (mobile || multiDrawIndirect);
++}
++template<class Issue>
++inline void IndirectDraws(std::uint64_t offset, std::uint32_t count, std::uint32_t stride,
++                          bool multiDrawEnabled, Issue issue) {
++    if (multiDrawEnabled || count <= 1) { issue(offset, count, stride); return; }
++    for (std::uint32_t i = 0; i < count; ++i)
++        issue(offset + std::uint64_t(i) * stride, 1, stride);
++}
++}
+diff --git a/doom/src/main/jni/engine/gzdoom/libraries/ZVulkan/include/zvulkan/vulkanobjects.h b/doom/src/main/jni/engine/gzdoom/libraries/ZVulkan/include/zvulkan/vulkanobjects.h
+index b09b4b0..2a72b84 100644
+--- a/doom/src/main/jni/engine/gzdoom/libraries/ZVulkan/include/zvulkan/vulkanobjects.h
++++ b/doom/src/main/jni/engine/gzdoom/libraries/ZVulkan/include/zvulkan/vulkanobjects.h
+@@ -1,3 +1,4 @@
++#include <zvulkan/fnaf_vulkan_compat.h>
+ #pragma once
+ 
+ #include "vulkandevice.h"
+@@ -779,12 +780,20 @@ inline void VulkanCommandBuffer::drawIndexed(uint32_t indexCount, uint32_t insta
+ 
+ inline void VulkanCommandBuffer::drawIndirect(VkBuffer buffer, VkDeviceSize offset, uint32_t drawCount, uint32_t stride)
+ {
+-	vkCmdDrawIndirect(this->buffer, buffer, offset, drawCount, stride);
++	FnafVulkanCompat::IndirectDraws(offset, drawCount, stride,
++		pool->device->EnabledFeatures.Features.multiDrawIndirect == VK_TRUE,
++		[&](std::uint64_t off, std::uint32_t count, std::uint32_t step) {
++			vkCmdDrawIndirect(this->buffer, buffer, off, count, step);
++		});
+ }
+ 
+ inline void VulkanCommandBuffer::drawIndexedIndirect(VkBuffer buffer, VkDeviceSize offset, uint32_t drawCount, uint32_t stride)
+ {
+-	vkCmdDrawIndexedIndirect(this->buffer, buffer, offset, drawCount, stride);
++	FnafVulkanCompat::IndirectDraws(offset, drawCount, stride,
++		pool->device->EnabledFeatures.Features.multiDrawIndirect == VK_TRUE,
++		[&](std::uint64_t off, std::uint32_t count, std::uint32_t step) {
++			vkCmdDrawIndexedIndirect(this->buffer, buffer, off, count, step);
++		});
+ }
+ 
+ inline void VulkanCommandBuffer::dispatch(uint32_t x, uint32_t y, uint32_t z)
+diff --git a/doom/src/main/jni/engine/gzdoom/libraries/ZVulkan/src/vulkanbuilders.cpp b/doom/src/main/jni/engine/gzdoom/libraries/ZVulkan/src/vulkanbuilders.cpp
+index be18a86..accce58 100644
+--- a/doom/src/main/jni/engine/gzdoom/libraries/ZVulkan/src/vulkanbuilders.cpp
++++ b/doom/src/main/jni/engine/gzdoom/libraries/ZVulkan/src/vulkanbuilders.cpp
+@@ -1,4 +1,5 @@
+ #include "vulkanbuilders.h"
++#include <zvulkan/fnaf_vulkan_compat.h>
+ #include "vulkansurface.h"
+ #include "vulkancompatibledevice.h"
+ #include "vulkanswapchain.h"
+@@ -1830,10 +1831,19 @@ std::vector<VulkanCompatibleDevice> VulkanDeviceBuilder::FindDevices(const std::
+ 			continue;
+ 
+ 		// Check if all required features are there
+-		if (info.Features.Features.samplerAnisotropy != VK_TRUE ||
+-			info.Features.Features.fragmentStoresAndAtomics != VK_TRUE ||
+-			info.Features.Features.multiDrawIndirect != VK_TRUE ||
+-			info.Features.Features.independentBlend != VK_TRUE)
++		// Xiaomi 11T's reported Mali driver lacks multiDrawIndirect. Android
++		// uses the legal single-draw fallback in VulkanCommandBuffer instead;
++		// keep the other backend requirements, and enable only advertised bits.
++#if defined(__ANDROID__)
++		constexpr bool fnafMobile = true;
++#else
++		constexpr bool fnafMobile = false;
++#endif
++		if (!FnafVulkanCompat::DeviceMeetsRequirements(fnafMobile,
++			info.Features.Features.samplerAnisotropy == VK_TRUE,
++			info.Features.Features.fragmentStoresAndAtomics == VK_TRUE,
++			info.Features.Features.multiDrawIndirect == VK_TRUE,
++			info.Features.Features.independentBlend == VK_TRUE))
+ 			continue;
+ 
+ 		VulkanCompatibleDevice dev;
+diff --git a/doom/src/main/jni/engine/gzdoom/src/common/rendering/vulkan/system/vk_renderdevice.cpp b/doom/src/main/jni/engine/gzdoom/src/common/rendering/vulkan/system/vk_renderdevice.cpp
+index 42129fc..34599bf 100644
+--- a/doom/src/main/jni/engine/gzdoom/src/common/rendering/vulkan/system/vk_renderdevice.cpp
++++ b/doom/src/main/jni/engine/gzdoom/src/common/rendering/vulkan/system/vk_renderdevice.cpp
+@@ -198,6 +198,10 @@ void VulkanRenderDevice::InitializeState()
+ #endif
+ }
+ 
++#if defined(__ANDROID__)
++extern "C" void FnafMobileVulkanFrame(void);
++#endif
++
+ void VulkanRenderDevice::Update()
+ {
+ 	twoD.Reset();
+@@ -218,6 +222,11 @@ void VulkanRenderDevice::Update()
+ 	mCommands->WaitForCommands(true);
+ 	mCommands->UpdateGpuStats();
+ 
++#if defined(__ANDROID__)
++	// GLES normally ticks the mobile bridge during EGL swap. Vulkan has no
++	// EGL swap, so tick it here without executing any OpenGL drawing.
++	FnafMobileVulkanFrame();
++#endif
+ 	Super::Update();
+ }
+ 
+diff --git a/doom/src/main/jni/engine/gzdoom/src/common/rendering/vulkan/textures/vk_hwtexture.cpp b/doom/src/main/jni/engine/gzdoom/src/common/rendering/vulkan/textures/vk_hwtexture.cpp
+index be0ed8d..ea7f33e 100644
+--- a/doom/src/main/jni/engine/gzdoom/src/common/rendering/vulkan/textures/vk_hwtexture.cpp
++++ b/doom/src/main/jni/engine/gzdoom/src/common/rendering/vulkan/textures/vk_hwtexture.cpp
+@@ -37,6 +37,23 @@
+ #include "vulkan/shaders/vk_shader.h"
+ #include "vk_hwtexture.h"
+ 
++#if defined(HAVE_GLES2)
++#include "../../gles/fnaf_texture_resize.h"
++#include "filesystem.h"
++#include "c_dispatch.h"
++#include "printf.h"
++#include <algorithm>
++#include <memory>
++#include <new>
++EXTERN_CVAR(Int, fnaf_max_image_size)
++static unsigned long long fnaf_vk_resized_images = 0;
++CCMD(fnaf_vk_texture_stats)
++{
++    Printf("FNAF_VK_TEXTURE_STATS resized=%llu cap=%d\n",
++        fnaf_vk_resized_images, int(fnaf_max_image_size));
++}
++#endif
++
+ VkHardwareTexture::VkHardwareTexture(VulkanRenderDevice* fb, int numchannels) : fb(fb)
+ {
+ 	mTexelsize = numchannels;
+@@ -109,7 +126,34 @@ void VkHardwareTexture::CreateImage(FTexture *tex, int translation, int flags)
+ 	{
+ 		FTextureBuffer texbuffer = tex->CreateTexBuffer(translation, flags | CTF_ProcessData);
+ 		bool indexed = flags & CTF_Indexed;
+-		CreateTexture(texbuffer.mWidth, texbuffer.mHeight,indexed? 1 : 4, indexed? VK_FORMAT_R8_UNORM : VK_FORMAT_B8G8R8A8_UNORM, texbuffer.mBuffer, !indexed);
++		int width = texbuffer.mWidth, height = texbuffer.mHeight;
++		const void* pixels = texbuffer.mBuffer;
++#if defined(HAVE_GLES2)
++		// The same world-image-only resolution limit as GLES. The source buffer
++		// remains alive until CreateTexture copies it to the Vulkan staging buffer.
++		// Camera canvases, UI, fonts and indexed textures do not enter this path.
++		std::unique_ptr<uint8_t[]> resized;
++		const int source = tex->GetSourceLump();
++		const char* path = source >= 0 ? fileSystem.GetFileFullName(source) : nullptr;
++		if (!indexed && pixels && fnaf_max_image_size >= 256 && FnafTextureResize::IsVisualAsset(path))
++		{
++			const int cap = std::min(int(fnaf_max_image_size),
++				int(fb->device->PhysicalDevice.Properties.Properties.limits.maxImageDimension2D));
++			int w, h;
++			FnafTextureResize::Dimensions(width, height, cap, w, h);
++			if (w < width || h < height)
++			{
++				resized.reset(new (std::nothrow) uint8_t[size_t(w) * size_t(h) * 4]);
++				if (resized && FnafTextureResize::Box(texbuffer.mBuffer, width, height, resized.get(), w, h))
++				{
++					width = w; height = h; pixels = resized.get();
++					++fnaf_vk_resized_images;
++				}
++			}
++		}
++#endif
++		CreateTexture(width, height, indexed ? 1 : 4,
++			indexed ? VK_FORMAT_R8_UNORM : VK_FORMAT_B8G8R8A8_UNORM, pixels, !indexed);
+ 	}
+ 	else
+ 	{

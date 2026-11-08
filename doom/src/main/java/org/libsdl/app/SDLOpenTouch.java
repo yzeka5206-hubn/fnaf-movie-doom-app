@@ -134,14 +134,11 @@ public class SDLOpenTouch
         fbWidth = (int) Math.max(displayWidth, displayHeight);
         fbHeight = (int) Math.min(displayWidth, displayHeight);
 
-        // Force emileb's GLES backend: the default (1 = Vulkan) cannot host
-        // the GL-drawn touch controls, which render inside the engine's
-        // swap-buffer callback. The GLES framebuffer takes its size from
-        // vid_defwidth/vid_defheight (desktop default 640x480), so pass the
-        // fixed landscape size, like Delta Touch's $W/$H substitution does.
-        // Ic render cozunurlugu ekranin 2/3'u (11T'de 1600x720): FPS dostu,
-        // dokunma koordinatlari tam ekran uzerinden calismaya devam eder.
+        // GLES is the safe default. Native Vulkan is an explicit one-session
+        // experiment; the Android View overlay stays independent of the API.
+        // Both paths receive the same real logical 480p/720p render dimensions.
         boolean fromOriginalMenu = intent.getBooleanExtra("fnaf_menu_selection", false);
+        boolean requestVulkan = fromOriginalMenu && intent.getBooleanExtra("fnaf_vulkan", false);
         if (fromOriginalMenu) {
             String selectedMap = intent.getStringExtra("fnaf_map");
             int difficulty = intent.getIntExtra("fnaf_difficulty", -1);
@@ -163,7 +160,7 @@ public class SDLOpenTouch
             int[] size = FnafLaunchProfile.renderSize(fbWidth, fbHeight, resolution);
             renderWidth = size[0];
             renderHeight = size[1];
-            args += " +set vid_preferbackend 2 +set vid_fullscreen 1"
+            args += FnafLaunchProfile.backendArgs(requestVulkan) + " +set vid_fullscreen 1"
                     + " +set vid_defwidth " + renderWidth
                     + " +set vid_defheight " + renderHeight
                     + FnafLaunchProfile.renderScaleArgs(renderWidth, renderHeight)
@@ -193,9 +190,10 @@ public class SDLOpenTouch
         String gamePath = intent.getStringExtra("game_path");
 
         int options = 0;
-        // The engine renders with its own GLES3 backend; the touch controls
-        // draw with the matching GLES context.
-        options |= 0x10; // GAME_OPTION_GLES3
+        // FNAF's own Android View handles touches. Keep the GL bridge ready
+        // for an initialization fallback; GAME_OPTION_VULKAN would disable
+        // its framebuffer callback even when the actual backend fell to GLES.
+        options |= 0x10; // GAME_OPTION_GLES3 (does not select the engine API)
         // FNAF: hazir menu/oyun dokunmatik duzenini gizle; kendi katmanimiz (Game.kt)
         // kullanilacak. Hazir duzen ara sahnelerde ekrana USE+ENTER gonderip
         // ana menuyu aciyordu.

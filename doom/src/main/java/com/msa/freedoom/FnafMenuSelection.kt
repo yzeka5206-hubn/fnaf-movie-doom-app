@@ -15,6 +15,7 @@ data class FnafMenuSelection(
     val outsideBlack: Boolean,
     val lightTextures: Boolean,
     val cameraSaver: Boolean,
+    val vulkan: Boolean = false,
 ) {
     fun isValid(): Boolean = FnafLaunchProfile.isValid(
         map, difficulty, streamer, graphics, shaders, halloween, christmas, resolution,
@@ -34,6 +35,7 @@ data class FnafMenuSelection(
         intent.putExtra("fnaf_outside_black", outsideBlack)
         intent.putExtra("fnaf_light_textures", lightTextures)
         intent.putExtra("fnaf_camera_saver", cameraSaver)
+        intent.putExtra("fnaf_vulkan", vulkan)
     }
 
     companion object {
@@ -52,6 +54,7 @@ data class FnafMenuSelection(
                 intent.getBooleanExtra("fnaf_outside_black", false),
                 intent.getBooleanExtra("fnaf_light_textures", true),
                 intent.getBooleanExtra("fnaf_camera_saver", false),
+                intent.getBooleanExtra("fnaf_vulkan", false),
             )
             return selected.takeIf { it.isValid() }
         }

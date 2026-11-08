@@ -15,6 +15,9 @@ REQUIRED_DEX_MARKERS = (
     b"fnaf_outside_black",
     b"fnaf_camera_saver",
     b"fnaf_light_textures",
+    b"fnaf_vulkan",
+    b"API: VULKAN",
+    b"API: OPENGL ES",
     b"fnaf_mipmap_low",
     b"KAMERA: TASARRUF",
     b"DOKU: FPS",
@@ -64,7 +67,8 @@ SKELETAL_SHADER_SHA256 = "72c457c6f39614b02cb5bf024b363a3375a7c79ef5385519b536a7
 NATIVE_BONE_MARKER = b"FNAF skeletal GLES palette:"
 NATIVE_OPT_MARKERS = (b"FNAF_CULL_STATS", b"FNAF_TEXTURE_STATS", b"FNAF_BONE_STATS",
                       b"FNAF_OUTSIDE_STATS", b"FNAF_STATIC_CULL_STATS",
-                      b"FNAF_RENDER_REUSE", b"FNAF_SPOT_REUSE", b"FNAF_MIPMAP_STATS", b"FNAF_CAMERA_SAVER")
+                      b"FNAF_RENDER_REUSE", b"FNAF_SPOT_REUSE", b"FNAF_MIPMAP_STATS", b"FNAF_CAMERA_SAVER",
+                      b"FNAF_NATIVE_VULKAN_FIRST_FRAME", b"FNAF_NATIVE_GLES_FIRST_FRAME", b"FNAF_VK_TEXTURE_STATS")
 NATIVE_LIBRARIES = (
     "lib/arm64-v8a/libuzdoom.so",
 )

@@ -136,6 +136,22 @@ class Game : SDLActivity() {
         startUiStateMonitor()
     }
 
+    // Sent only after the native backend renders a frame; unlike the menu
+    // choice this reports which API actually opened after initialization.
+    override fun onUnhandledMessage(command: Int, param: Any?): Boolean {
+        if (command != 0x8015) return super.onUnhandledMessage(command, param)
+        val opened = (param as? Int) ?: return true
+        val askedVulkan = intent?.getBooleanExtra("fnaf_vulkan", false) == true
+        val status = when (opened) {
+            1 -> "Grafik: Vulkan (deneysel)"
+            2 -> if (askedVulkan) "Vulkan açılmadı; OpenGL ES kullanılıyor" else "Grafik: OpenGL ES"
+            else -> return true
+        }
+        recordEvent(status)
+        Toast.makeText(this, status, Toast.LENGTH_LONG).show()
+        return true
+    }
+
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
         Utils.setImmersionMode(this)

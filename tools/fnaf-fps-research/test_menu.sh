@@ -47,8 +47,8 @@ public class MenuRoundTrip {
  public static void main(String[] a){
   int count=0;
   for(boolean exterior:new boolean[]{false,true}) for(boolean textures:new boolean[]{false,true})
-   for(boolean camera:new boolean[]{false,true}) for(int res:new int[]{480,720}) {
-    var in=new FnafMenuSelection("NIGHT1",0,0,0,0,0,0,res,exterior,textures,camera);
+   for(boolean camera:new boolean[]{false,true}) for(boolean vulkan:new boolean[]{false,true}) for(int res:new int[]{480,720}) {
+    var in=new FnafMenuSelection("NIGHT1",0,0,0,0,0,0,res,exterior,textures,camera,vulkan);
     Intent intent=new Intent(); in.writeTo(intent); var out=FnafMenuSelection.Companion.fromIntent(intent);
     if(!in.equals(out)) throw new AssertionError("typed menu options changed across Intent"); count++;
    }
@@ -58,7 +58,7 @@ public class MenuRoundTrip {
     .putExtra("fnaf_difficulty",0).putExtra("fnaf_streamer",0).putExtra("fnaf_graphics",0)
     .putExtra("fnaf_shaders",0).putExtra("fnaf_halloween",0).putExtra("fnaf_christmas",0).putExtra("fnaf_resolution",480);
   var old=FnafMenuSelection.Companion.fromIntent(legacy);
-  if(old==null || !old.getLightTextures() || old.getCameraSaver()) throw new AssertionError("legacy defaults");
+  if(old==null || !old.getLightTextures() || old.getCameraSaver() || old.getVulkan()) throw new AssertionError("legacy defaults");
   System.out.println("PASS original menu compiled against Android36; " + count + " cross-process Intent option roundtrips");
  }
 }

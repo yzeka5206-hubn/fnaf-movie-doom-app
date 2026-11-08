@@ -52,6 +52,18 @@ public class GameOverlayHostTest {
     public static void main(String[] args) throws Exception {
         Handler.clear(); SDLOpenTouch.ready = true;
         Game g = new Game(); g.onCreate(null);
+        Method backend = Game.class.getDeclaredMethod("onUnhandledMessage", int.class, Object.class);
+        backend.setAccessible(true);
+        g.getIntent().putExtra("fnaf_vulkan", true);
+        check((Boolean)backend.invoke(g, 0x8015, 1), "native Vulkan status handled");
+        check(android.widget.Toast.last.contains("Vulkan (deneysel)"), "reports real Vulkan frame");
+        check((Boolean)backend.invoke(g, 0x8015, 2), "fallback status handled");
+        check(android.widget.Toast.last.contains("OpenGL ES kullanılıyor"), "reports actual GLES fallback");
+        g.getIntent().putExtra("fnaf_vulkan", false);
+        backend.invoke(g, 0x8015, 2);
+        check(android.widget.Toast.last.equals("Grafik: OpenGL ES"), "reports ordinary GLES");
+        check(!(Boolean)backend.invoke(g, 0x8999, 1), "unrelated native message is not consumed");
+        System.out.println("PASS real Game.kt backend reporting: Vulkan, GLES fallback, normal GLES, unrelated command");
         TextView fener = button(g, "FENER"), kos = button(g, "KOS"), egil = button(g, "EGIL");
         TextView saat = button(g, "SAAT"), keyboard = button(g, "KLAVYE"), al = button(g, "AL");
         check(find(g.root, "FARE") == null && find(g.root, "TIK") == null, "old mouse buttons must not exist");

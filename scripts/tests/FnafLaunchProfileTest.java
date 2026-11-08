@@ -21,6 +21,8 @@ public final class FnafLaunchProfileTest {
         dimensions(2400, 1080, 720, 1600, 720);
         dimensions(1280, 720, 480, 852, 480);
         dimensions(1280, 720, 720, 1280, 720);
+        check(FnafLaunchProfile.backendArgs(false).equals(" +set vid_preferbackend 2"), "GLES default");
+        check(FnafLaunchProfile.backendArgs(true).equals(" +set vid_preferbackend 1"), "native Vulkan selection");
         check(FnafLaunchProfile.frameRateArgs().equals(
             " +set vid_maxfps 60 +set cl_capfps 0 +set vid_fps 1"), "FPS launch settings");
         int n = 0;

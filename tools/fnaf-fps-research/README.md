@@ -17,8 +17,10 @@ and backwards by that script. It contains no desktop-only test shims.
   direction and cone trigonometry. Collisions cause recomputation, not skipped
   lights. Both flashlight spotlights remain intact.
 * The main menu's `DOKU: FPS` setting enables mipmaps only for ordinary eligible
-  world/character images at the lowest graphics preset; UI/fonts, indexed
-  images and camera canvases remain outside this policy. It bounds those images
+  world/character images on GLES at the lowest graphics preset; UI/fonts, indexed
+  images and camera canvases remain outside this policy. Experimental Vulkan
+  uses the same size bounds but its own upstream sampler/mipmap policy; see
+  `tools/fnaf-vulkan-experiment/README.md`. This setting bounds those images
   to 512 px at 480p or 768 px at 720p; `DOKU: NORMAL` restores the v15
   768/1024 bounds and nearest filter. Additional mip levels cost memory and may
   or may not help a given GPU. GLES2 without full NPOT mipmap support falls back.

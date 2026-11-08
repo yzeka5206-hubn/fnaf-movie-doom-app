@@ -30,6 +30,11 @@ tar -xzf "$WORK/source.tar.gz" --strip-components=1 -C "$WORK/src"
  cmp doom/src/main/jni/engine/gzdoom/src/common/rendering/gles/fnaf_texture_policy.h "$REPO/tools/fnaf-fps-research/fnaf_texture_policy.h"
  cmp doom/src/main/jni/engine/gzdoom/src/r_data/fnaf_camera_scheduler.h "$REPO/tools/fnaf-fps-research/fnaf_camera_scheduler.h"
  cmp doom/src/main/jni/engine/gzdoom/src/rendering/hwrenderer/fnaf_spot_cache.h "$REPO/tools/fnaf-fps-research/fnaf_spot_cache.h"
+ git apply --check "$REPO/tools/fnaf-vulkan-experiment/engine.patch"
+ git apply "$REPO/tools/fnaf-vulkan-experiment/engine.patch"
+ git apply --reverse --check "$REPO/tools/fnaf-vulkan-experiment/engine.patch"
+ cmp doom/src/main/jni/engine/gzdoom/libraries/ZVulkan/include/zvulkan/fnaf_vulkan_compat.h "$REPO/tools/fnaf-vulkan-experiment/fnaf_vulkan_compat.h"
+ python3 "$REPO/tools/fnaf-vulkan-experiment/check_raw_indirect.py" doom/src/main/jni/engine/gzdoom
 )
 "$NDK/ndk-build" -C "$WORK/src/doom/src/main" APP_ABI=arm64-v8a -j4 > "$WORK/ndk-build.log" 2>&1 || { tail -150 "$WORK/ndk-build.log"; exit 1; }
 SO="$WORK/src/doom/src/main/libs/arm64-v8a/libuzdoom.so"

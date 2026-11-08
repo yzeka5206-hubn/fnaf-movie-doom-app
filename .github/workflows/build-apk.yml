@@ -5,6 +5,12 @@ on:
   push:
     branches: [ main, master ]
 
+# Helper CI only reads the previous artifact and source. The game signing key
+# remains the existing protected repository secret; never create a new one.
+permissions:
+  contents: read
+  actions: read
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -50,6 +56,8 @@ jobs:
           "$RUNNER_TEMP/fnaf-tests/fps60"
           g++ -std=c++17 -O2 -Wall -Wextra -Werror tools/fnaf-fps-research/host_test.cpp -o "$RUNNER_TEMP/fnaf-tests/fps-research"
           "$RUNNER_TEMP/fnaf-tests/fps-research"
+          g++ -std=c++17 -O2 -Wall -Wextra -Werror tools/fnaf-vulkan-experiment/host_test.cpp -o "$RUNNER_TEMP/fnaf-tests/vulkan"
+          "$RUNNER_TEMP/fnaf-tests/vulkan"
           OPENBLAS_NUM_THREADS=1 python3 tools/fnaf-fps-60/test_real_models.py \
             doom/src/main/assets/game/FiveNightsAtFreddysDoomMOVIE.pk3 \
             doom/src/main/assets/game/fnaf-model-frames-v1.pk3
@@ -61,6 +69,25 @@ jobs:
           python3 tools/fnaf-outside-black/test_real_maps.py doom/src/main/assets/game/FiveNightsAtFreddysDoomMOVIE.wad
           python3 -m unittest discover -s scripts/tests -p 'test_fnaf_menu_contract.py' -v
           python3 -m unittest discover -s scripts/tests -p 'test_fps60_contract.py' -v
+          python3 -m unittest discover -s scripts/tests -p 'test_v16_ci_contract.py' -v
+
+      - name: Host-test native menu, renderer choice and touch controls
+        run: |
+          set -euo pipefail
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/kotlin.zip" https://github.com/JetBrains/kotlin/releases/download/v2.1.20/kotlin-compiler-2.1.20.zip
+          unzip -q "$RUNNER_TEMP/kotlin.zip" -d "$RUNNER_TEMP/kotlin"
+          export KOTLINC="$RUNNER_TEMP/kotlin/kotlinc/bin/kotlinc"
+          export ANDROID_JAR="$ANDROID_SDK_ROOT/platforms/android-36/android.jar"
+          export JAVA_OPTS='-Xmx256m'
+          bash tools/fnaf-fps-research/test_menu.sh
+          bash tools/fnaf-fps-research/test_menu_interactions.sh
+          bash scripts/tests/run_host_controls.sh
+
+      - name: Validate Vulkan fallback on software Vulkan
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libvulkan-dev mesa-vulkan-drivers vulkan-validationlayers glslang-tools
+          bash tools/fnaf-vulkan-experiment/run_gpu_test.sh
 
       # Download before the six-minute native build, retrying temporary 5xx errors.
       # The binary distribution has the same Gradle runtime and is SHA-256 pinned.
@@ -113,3 +140,133 @@ jobs:
             doom/build/outputs/apk/debug/*.apk
             doom/build/outputs/apk/debug/*.apk.sha256
           if-no-files-found: error
+
+  build_small_helper:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    outputs:
+      target_sha: ${{ steps.delta.outputs.target_sha }}
+    steps:
+      # This exact helper template commit is pushed separately before dispatch.
+      - name: Checkout offline helper template
+        uses: actions/checkout@v4
+        with:
+          ref: 9521173a7bf57cff0f26320fc3c16da4a654e61a
+          lfs: false
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install delta generator and Android SDK
+        run: |
+          set -euo pipefail
+          python -m pip install bsdiff4==1.2.6
+          yes | "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+          "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" 'platforms;android-36' 'build-tools;36.0.0'
+      - name: Download just-verified signed v16
+        uses: actions/download-artifact@v4
+        with:
+          name: FNAF-Movie-Doom-APK
+          path: ${{ runner.temp }}/fps-v16
+      - name: Download exact previous v15
+        uses: actions/download-artifact@v4
+        with:
+          name: FNAF-Movie-Doom-APK
+          path: ${{ runner.temp }}/fps-v15
+          repository: ${{ github.repository }}
+          run-id: 42473457321
+          github-token: ${{ github.token }}
+      - name: Generate, replay, and verify exact v15-to-v16 delta
+        id: delta
+        env:
+          FNAF_EXPECTED_SOURCE_SHA: 3ae61eee3afd2fd1b55c73cefff22d5c540a000d4961d04e35ee0edbb48c1fe5
+        run: |
+          set -euo pipefail
+          OLD="$RUNNER_TEMP/fps-v15/doom-debug.apk"
+          NEW="$RUNNER_TEMP/fps-v16/doom-debug.apk"
+          test -s "$OLD" && test -s "$NEW"
+          bash scripts/prepare-v16-ci.sh "$OLD" "$NEW" "$RUNNER_TEMP/fps-delta"
+      - name: Preflight pinned Gradle distribution
+        run: |
+          chmod +x ./gradlew
+          for attempt in 1 2 3; do
+            if ./gradlew --version; then exit 0; fi
+            if [ "$attempt" -eq 3 ]; then exit 1; fi
+            sleep $((attempt * 5))
+          done
+      - name: Build offline updater
+        run: ./gradlew :doom:assembleDebug --no-daemon
+      - name: Verify helper package and permissions
+        run: |
+          set -euo pipefail
+          APK=doom/build/outputs/apk/debug/FNAF-FPS-Deneme-Guncelleyici.apk
+          test -s "$APK"
+          sha256sum "$APK"
+          tools="$ANDROID_SDK_ROOT/build-tools/36.0.0"
+          "$tools/apksigner" verify --verbose "$APK"
+          "$tools/aapt" dump badging "$APK" > "$RUNNER_TEMP/helper-badging.txt"
+          grep '^package: name=' "$RUNNER_TEMP/helper-badging.txt" | grep "com.fnaf.moviedoom.fpsresearchupdater"
+          "$tools/aapt" dump permissions "$APK" > "$RUNNER_TEMP/helper-permissions.txt"
+          if grep -Fq 'android.permission.INTERNET' "$RUNNER_TEMP/helper-permissions.txt"; then
+            echo 'Unexpected network permission'; exit 1
+          fi
+          echo 'PASS distinct updater package and no INTERNET permission'
+      - name: Upload helper candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: FNAF-FPS-Research-Helper-Candidate
+          path: doom/build/outputs/apk/debug/FNAF-FPS-Deneme-Guncelleyici.apk
+          if-no-files-found: error
+          retention-days: 90
+
+  test_small_helper:
+    needs: build_small_helper
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Checkout helper integration test
+        uses: actions/checkout@v4
+        with:
+          ref: 9521173a7bf57cff0f26320fc3c16da4a654e61a
+          lfs: false
+      - name: Install Android SDK build tools
+        run: |
+          yes | "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+          "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" 'build-tools;36.0.0'
+      - name: Download same helper candidate
+        uses: actions/download-artifact@v4
+        with:
+          name: FNAF-FPS-Research-Helper-Candidate
+          path: helper
+      - name: Test real v15 in-place update and private-data sentinel on Android 14
+        env:
+          TARGET_SHA: ${{ needs.build_small_helper.outputs.target_sha }}
+        run: |
+          set -euo pipefail
+          [[ "$TARGET_SHA" =~ ^[0-9a-f]{64}$ ]]
+          grep -Fq '__TARGET_SHA__' scripts/android14-animation-updater-ci.sh
+          sed -i "s/__TARGET_SHA__/$TARGET_SHA/g" scripts/android14-animation-updater-ci.sh
+          bash scripts/android14-animation-updater-ci.sh "$PWD/helper/FNAF-FPS-Deneme-Guncelleyici.apk" 15
+
+  publish_small_helper:
+    needs: [build_small_helper, test_small_helper]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download Android-tested helper
+        uses: actions/download-artifact@v4
+        with:
+          name: FNAF-FPS-Research-Helper-Candidate
+          path: helper
+      - name: Publish verified offline updater
+        uses: actions/upload-artifact@v4
+        with:
+          name: FNAF-FPS-Deneme-Guncelleyici
+          path: helper/FNAF-FPS-Deneme-Guncelleyici.apk
+          if-no-files-found: error
+          retention-days: 90

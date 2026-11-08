@@ -39,6 +39,11 @@ public final class FnafLaunchProfile {
                 " +set vid_scale_custompixelaspect 1";
     }
 
+    /** Native backend selection. Vulkan is never an implicit default. */
+    public static String backendArgs(boolean useVulkan) {
+        return " +set vid_preferbackend " + (useVulkan ? 1 : 2);
+    }
+
     /** 60 is an upper limit, not a guarantee. Expose the engine's own
      * unobtrusive FPS/frametime counter; it remains toggleable in-game. */
     public static String frameRateArgs() {

@@ -69,18 +69,22 @@ public class MenuButtonTest {
  public static void main(String[] args) throws Exception {
   var activity=new OriginalMenuActivity();
   var onCreate=OriginalMenuActivity.class.getDeclaredMethod("onCreate",android.os.Bundle.class);onCreate.setAccessible(true);onCreate.invoke(activity,new Object[]{null});
-  var v=(LinearLayout)activity.root; eq(v.children.size(),5);
+  var v=(LinearLayout)activity.root; eq(v.children.size(),6);
   eq(button(v,0).getText().toString(),"480p");eq(button(v,2).getText().toString(),"DIŞ: SİYAH");
-  eq(button(v,3).getText().toString(),"DOKU: FPS");eq(button(v,4).getText().toString(),"KAMERA: NORMAL");
-  button(v,0).click();button(v,2).click();button(v,3).click();button(v,4).click();
+  eq(button(v,3).getText().toString(),"DOKU: FPS");eq(button(v,4).getText().toString(),"KAMERA: NORMAL");eq(button(v,5).getText().toString(),"API: OPENGL ES");
+  button(v,0).click();button(v,2).click();button(v,3).click();button(v,4).click();button(v,5).click();
+  eq(button(v,5).getText().toString(),"API: VULKAN");
   eq(button(v,0).getText().toString(),"720p");eq(button(v,2).getText().toString(),"DIŞ: NORMAL");
   eq(button(v,3).getText().toString(),"DOKU: NORMAL");eq(button(v,4).getText().toString(),"KAMERA: TASARRUF");
   activity.onSingleplayerRequested("NIGHT1",0,0,0,0,0,0);
   var x=FnafMenuSelection.Companion.fromIntent(activity.result);
-  if(!activity.finished || x==null || x.getResolution()!=720 || x.getOutsideBlack() || x.getLightTextures() || !x.getCameraSaver()) throw new AssertionError("wrong launch result");
+  if(!activity.finished || x==null || x.getResolution()!=720 || x.getOutsideBlack() || x.getLightTextures() || !x.getCameraSaver() || !x.getVulkan()) throw new AssertionError("wrong launch result");
   var again=new OriginalMenuActivity();onCreate.invoke(again,new Object[]{null});var u=(LinearLayout)again.root;
   eq(button(u,0).getText().toString(),"720p");eq(button(u,2).getText().toString(),"DIŞ: NORMAL");
   eq(button(u,3).getText().toString(),"DOKU: NORMAL");eq(button(u,4).getText().toString(),"KAMERA: TASARRUF");
+  eq(button(u,5).getText().toString(),"API: OPENGL ES"); // Vulkan never persists across sessions
+  button(u,5).click();eq(button(u,5).getText().toString(),"API: VULKAN");
+  button(u,5).click();eq(button(u,5).getText().toString(),"API: OPENGL ES");
   button(u,3).click();button(u,4).click();eq(button(u,3).getText().toString(),"DOKU: FPS");eq(button(u,4).getText().toString(),"KAMERA: NORMAL");
   System.out.println("PASS original-menu option taps, persistence, reversible toggles and game Intent");
  }

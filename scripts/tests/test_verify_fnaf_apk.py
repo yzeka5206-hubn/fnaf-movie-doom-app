@@ -19,7 +19,7 @@ SMALL_ASSETS = {name: (4, magic) for name, (_, magic) in verifier.ASSETS.items()
 @patch.object(verifier, "NATIVE_SHA256", {})
 @patch.object(verifier, "SKELETAL_SHADER_SHA256", TEST_SHADER_SHA)
 class ApkVerifierTest(unittest.TestCase):
-    def make_apk(self, directory, *, marker=True, missing=None, bad_magic=None, missing_marker=None, bad_shader=False, bad_native=False, static_dex=False, extra_abi=False):
+    def make_apk(self, directory, *, marker=True, missing=None, bad_magic=None, missing_marker=None, bad_shader=False, bad_native=False, static_dex=False, extra_abi=False, missing_native_marker=None):
         apk = Path(directory) / "app-debug.apk"
         with zipfile.ZipFile(apk, "w") as archive:
             for name, (_, magic) in SMALL_ASSETS.items():
@@ -30,7 +30,7 @@ class ApkVerifierTest(unittest.TestCase):
                 embedded.writestr(verifier.SHADER_MEMBER, b"old shader" if bad_shader else TEST_SHADER)
             archive.writestr("assets/uzdoom.pk3", base.getvalue())
             for name in verifier.NATIVE_LIBRARIES:
-                archive.writestr(name, b"\x7fELF" + (b"old engine" if bad_native else verifier.NATIVE_BONE_MARKER + b"|".join(verifier.NATIVE_OPT_MARKERS)))
+                archive.writestr(name, b"\x7fELF" + (b"old engine" if bad_native else verifier.NATIVE_BONE_MARKER + b"|".join(m for m in verifier.NATIVE_OPT_MARKERS if m != missing_native_marker)))
             if extra_abi:
                 archive.writestr("lib/armeabi-v7a/libuzdoom.so", b"\x7fELF" + verifier.NATIVE_BONE_MARKER)
             markers = b"|".join(m for m in verifier.REQUIRED_DEX_MARKERS if m != missing_marker)
@@ -94,6 +94,12 @@ class ApkVerifierTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             with self.assertRaisesRegex(ValueError, "shader"):
                 verifier.validate_apk(self.make_apk(temp, bad_shader=True))
+
+    @patch.object(verifier, "ASSETS", SMALL_ASSETS)
+    def test_vulkan_bridge_marker_required(self):
+        with tempfile.TemporaryDirectory() as temp:
+            with self.assertRaisesRegex(ValueError, "instrumentation"):
+                verifier.validate_apk(self.make_apk(temp, missing_native_marker=b"FNAF_NATIVE_VULKAN_FIRST_FRAME"))
 
     @patch.object(verifier, "ASSETS", SMALL_ASSETS)
     def test_old_native_engine_rejected(self):
