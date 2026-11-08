@@ -64,11 +64,23 @@ def decode_bsdiff_i64(encoded):
 def refined_matches(old_data, new_data, old_base, new_base, earliest):
     """Yield exact, forward-only equal-byte runs in target/source order."""
     control, differences, extra = bsdiff4.core.diff(old_data, new_data)
-    if len(control) % 24:
-        raise ValueError('invalid bsdiff control block')
+    # bsdiff4 1.2.x returns triples as a Python list; some implementations
+    # expose the serialized BSDIFF control bytes instead. Accept both, and
+    # still validate every resulting exact-copy span before writing the PCH2.
+    if isinstance(control, (bytes, bytearray)):
+        if len(control) % 24:
+            raise ValueError('invalid bsdiff control block')
+        triples = [tuple(decode_bsdiff_i64(control[ci+i:ci+i+8]) for i in (0, 8, 16))
+                   for ci in range(0, len(control), 24)]
+    elif isinstance(control, (list, tuple)):
+        if any(not isinstance(t, (list, tuple)) or len(t) != 3 or
+               any(not isinstance(n, int) for n in t) for t in control):
+            raise ValueError('invalid bsdiff control triples')
+        triples = control
+    else:
+        raise ValueError('unsupported bsdiff control representation')
     old_at = new_at = diff_at = extra_at = 0
-    for ci in range(0, len(control), 24):
-        x, y, adjust = (decode_bsdiff_i64(control[ci+i:ci+i+8]) for i in (0, 8, 16))
+    for x, y, adjust in triples:
         if x < 0 or y < 0 or new_at + x + y > len(new_data):
             raise ValueError('invalid bsdiff span')
         block = differences[diff_at:diff_at+x]
@@ -91,6 +103,40 @@ def refined_matches(old_data, new_data, old_base, new_base, earliest):
         extra_at += y
     if new_at != len(new_data) or diff_at != len(differences) or extra_at != len(extra):
         raise ValueError('bsdiff lengths inconsistent')
+
+
+def plan_operations(selected, target_size, max_operations=MAX_OPERATIONS):
+    """Build exact forward-copy/literal operations, safely limiting count.
+
+    If a very different native library yields more copy runs than the Android
+    reader allows, retaining the longest runs and encoding omitted bytes as
+    literals keeps the APK exact instead of failing or exceeding the limit.
+    """
+    if target_size < 0 or max_operations < 1:
+        raise ValueError('invalid target size or operation limit')
+    def make_ops(runs):
+        ops = []
+        pos = old_end = 0
+        for np, op, n in runs:
+            if n <= 0 or np < pos or op < old_end or np + n > target_size:
+                raise ValueError('invalid, backward or overlapping copy run')
+            if np > pos:
+                ops.append(('L', pos, np-pos))
+            ops.append(('C', op, n))
+            pos, old_end = np+n, op+n
+        if pos < target_size:
+            ops.append(('L', pos, target_size-pos))
+        return ops
+    ops = make_ops(selected)
+    if len(ops) > max_operations:
+        max_copies = (max_operations - 1) // 2
+        kept = sorted(sorted(selected, key=lambda item: item[2], reverse=True)[:max_copies], key=lambda item: item[0])
+        print('Limiting patch copy runs:', len(selected), '->', len(kept),
+              'to stay within', max_operations, 'operations', flush=True)
+        ops = make_ops(kept)
+    if len(ops) > max_operations:
+        raise ValueError('could not limit patch operation count')
+    return ops
 
 
 def build(old_path, new_path, patch_path):
@@ -122,19 +168,7 @@ def build(old_path, new_path, patch_path):
                     refined_count += 1
                     print('Refined', n.filename, 'runs', len(matches),
                           'copied', sum(x[2] for x in matches), '/', n.compress_size, flush=True)
-        ops = []
-        pos = 0
-        for np, op, n in selected:
-            if np < pos:
-                raise ValueError('overlapping target copies')
-            if np > pos:
-                ops.append(('L', pos, np-pos))
-            ops.append(('C', op, n))
-            pos = np+n
-        if pos < new_path.stat().st_size:
-            ops.append(('L', pos, new_path.stat().st_size-pos))
-        if len(ops) > MAX_OPERATIONS:
-            raise ValueError(f'too many PCH2 operations: {len(ops)}')
+        ops = plan_operations(selected, new_path.stat().st_size)
         with patch_path.open('wb') as out:
             out.write(b'FNAFPCH2')
             out.write(struct.pack('>QQ', old_path.stat().st_size, new_path.stat().st_size))
