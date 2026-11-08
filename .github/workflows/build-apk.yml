@@ -1,4 +1,4 @@
-name: Build and test night exterior offline updater
+name: Build and verify 60 FPS offline updater
 
 on:
   workflow_dispatch:
@@ -8,25 +8,22 @@ permissions:
   actions: read
 
 jobs:
-  updater:
+  build:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 20
     steps:
-      - name: Checkout updater sources (game LFS files not required)
+      - name: Checkout updater sources without game LFS downloads
         uses: actions/checkout@v4
-
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
-
       - name: Install Android SDK components
         run: |
           yes | "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
           "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" 'platforms;android-36' 'build-tools;36.0.0'
-
-      - name: Check patch safety and exact source and target headers
+      - name: Check PCH2 safety and both exact source/target headers
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/patch-classes"
@@ -37,9 +34,10 @@ jobs:
           from pathlib import Path
           import hashlib,struct
           root=Path('doom/repair/assets')
-          target='becb43039e405b619dc39c8b2d00e5d0ffe991fac1a6bc6e2edba837371b8879'
+          target='3ae61eee3afd2fd1b55c73cefff22d5c540a000d4961d04e35ee0edbb48c1fe5'
           variants={
-            'repair-optimized.dat':('f55c97179051b1ae5b36a255baa79d4c33e03c51ae0c15b4b0628f7a68ff9286','61c6b445049daa29170c642423dcb36f0994a50095a8608f5c9abb8a72470d91'),
+            'repair-v13.dat':('f55c97179051b1ae5b36a255baa79d4c33e03c51ae0c15b4b0628f7a68ff9286','1040ce49eec462137c62579155c709e304fd6dbee4b152a49172189d53d56609'),
+            'repair-v14.dat':('becb43039e405b619dc39c8b2d00e5d0ffe991fac1a6bc6e2edba837371b8879','002cb5668de506f9e64723a3792adbfa6c444c578715f71033d52d9197bf31bf'),
           }
           for name,(source,patch_sha) in variants.items():
               data=(root/name).read_bytes()
@@ -49,32 +47,77 @@ jobs:
               assert 0<count<=16384, (name,count)
               print('PASS',name,'whole patch SHA, source SHA, target SHA,',count,'operations')
           PY
-
+      - name: Preflight pinned Gradle distribution
+        run: |
+          chmod +x ./gradlew
+          for attempt in 1 2 3; do
+            if ./gradlew --version; then exit 0; fi
+            echo "Gradle download attempt $attempt failed" >&2
+            if [ "$attempt" -eq 3 ]; then exit 1; fi
+            sleep $((attempt * 5))
+          done
       - name: Build offline updater
         run: |
           chmod +x ./gradlew
           ./gradlew :doom:assembleDebug --no-daemon
-
       - name: Verify updater package, permissions, and signature
         run: |
           set -euo pipefail
-          APK=doom/build/outputs/apk/debug/FNAF-Dis-Deneme-Guncelleyici.apk
+          APK=doom/build/outputs/apk/debug/FNAF-FPS60-Guncelleyici.apk
           test -s "$APK"
           sha256sum "$APK"
           "$ANDROID_SDK_ROOT/build-tools/36.0.0/apksigner" verify --verbose "$APK"
-          "$ANDROID_SDK_ROOT/build-tools/36.0.0/aapt" dump badging "$APK" | grep '^package: name=' | grep "com.fnaf.moviedoom.outsideupdater"
-          if "$ANDROID_SDK_ROOT/build-tools/36.0.0/aapt" dump permissions "$APK" | grep -q 'android.permission.INTERNET'; then
+          "$ANDROID_SDK_ROOT/build-tools/36.0.0/aapt" dump badging "$APK" > "$RUNNER_TEMP/badging.txt"
+          grep '^package: name=' "$RUNNER_TEMP/badging.txt" | grep "com.fnaf.moviedoom.fpsupdater"
+          "$ANDROID_SDK_ROOT/build-tools/36.0.0/aapt" dump permissions "$APK" > "$RUNNER_TEMP/permissions.txt"
+          if grep -Fq 'android.permission.INTERNET' "$RUNNER_TEMP/permissions.txt"; then
             echo 'Unexpected network permission'; exit 1
           fi
           echo 'PASS unique updater package and no INTERNET permission'
+      - name: Upload candidate used for both Android tests
+        uses: actions/upload-artifact@v4
+        with:
+          name: FNAF-FPS60-Helper-Candidate
+          path: doom/build/outputs/apk/debug/FNAF-FPS60-Guncelleyici.apk
+          if-no-files-found: error
+          retention-days: 90
 
-      - name: Android 14 real-APK preparation and in-place upgrade
-        run: bash scripts/android14-animation-updater-ci.sh "$PWD/doom/build/outputs/apk/debug/FNAF-Dis-Deneme-Guncelleyici.apk"
+  android_test:
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        baseline: [13, 14]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout test script
+        uses: actions/checkout@v4
+      - name: Install Android SDK build tools
+        run: |
+          yes | "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+          "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" 'build-tools;36.0.0'
+      - name: Download same candidate
+        uses: actions/download-artifact@v4
+        with:
+          name: FNAF-FPS60-Helper-Candidate
+          path: helper
+      - name: Android 14 real APK v${{ matrix.baseline }} in-place update
+        run: bash scripts/android14-animation-updater-ci.sh "$PWD/helper/FNAF-FPS60-Guncelleyici.apk" '${{ matrix.baseline }}'
 
+  publish:
+    needs: [build, android_test]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download twice-tested helper
+        uses: actions/download-artifact@v4
+        with:
+          name: FNAF-FPS60-Helper-Candidate
+          path: helper
       - name: Upload verified updater APK
         uses: actions/upload-artifact@v4
         with:
-          name: FNAF-Dis-Deneme-Guncelleyici
-          path: doom/build/outputs/apk/debug/FNAF-Dis-Deneme-Guncelleyici.apk
+          name: FNAF-FPS60-Guncelleyici
+          path: helper/FNAF-FPS60-Guncelleyici.apk
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 90
