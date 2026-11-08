@@ -19,6 +19,10 @@ tar -xzf "$WORK/source.tar.gz" --strip-components=1 -C "$WORK/src"
  git apply "$REPO/tools/fnaf-outside-black/engine.patch"
  git apply --reverse --check "$REPO/tools/fnaf-outside-black/engine.patch"
  cmp doom/src/main/jni/engine/gzdoom/src/rendering/hwrenderer/scene/fnaf_outside_black.h "$REPO/tools/fnaf-outside-black/fnaf_outside_black.h"
+ git apply --check "$REPO/tools/fnaf-fps-60/engine.patch"
+ git apply "$REPO/tools/fnaf-fps-60/engine.patch"
+ git apply --reverse --check "$REPO/tools/fnaf-fps-60/engine.patch"
+ cmp doom/src/main/jni/engine/gzdoom/src/common/models/fnaf_static_cull.h "$REPO/tools/fnaf-fps-60/fnaf_static_cull.h"
 )
 "$NDK/ndk-build" -C "$WORK/src/doom/src/main" APP_ABI=arm64-v8a -j4 > "$WORK/ndk-build.log" 2>&1 || { tail -150 "$WORK/ndk-build.log"; exit 1; }
 SO="$WORK/src/doom/src/main/libs/arm64-v8a/libuzdoom.so"

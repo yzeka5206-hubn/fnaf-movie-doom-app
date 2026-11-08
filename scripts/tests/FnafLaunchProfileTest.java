@@ -21,6 +21,8 @@ public final class FnafLaunchProfileTest {
         dimensions(2400, 1080, 720, 1600, 720);
         dimensions(1280, 720, 480, 852, 480);
         dimensions(1280, 720, 720, 1280, 720);
+        check(FnafLaunchProfile.frameRateArgs().equals(
+            " +set vid_maxfps 60 +set cl_capfps 0 +set vid_fps 1"), "FPS launch settings");
         int n = 0;
         for (String map : new String[]{"OUTSIDE", "NIGHT1", "NIGHT2", "NIGHT3", "NIGHT4", "NIGHT5"})
             for (int difficulty=0; difficulty<3; difficulty++) for (int streamer=0; streamer<2; streamer++)
@@ -31,9 +33,11 @@ public final class FnafLaunchProfileTest {
                     check(args.contains("+set vid_scalefactor 1"), args);
                     check(args.contains("+set gl_precache 0"), args);
                     check(args.contains("+set fnaf_iqm_cull 1"), args);
+                    check(args.contains("+set fnaf_static_cull 1"), args);
                     check(args.contains("+set fnaf_outside_black " + (outsideBlack ? 1 : 0) + " "), args);
                     check(args.indexOf("+set fnaf_outside_black") < args.indexOf("+map "), args);
-                    check(args.contains("+set fnaf_max_image_size " + (graphics == 0 ? 1024 : 0) + " "), args);
+                    check(args.contains("+set fnaf_max_image_size " +
+                        (graphics == 0 ? (height == 480 ? 768 : 1024) : 0) + " "), args);
                     check(args.contains("+map " + map), args);
                     check(!args.contains("-host") && !args.contains("-join"), args);
                     n++;

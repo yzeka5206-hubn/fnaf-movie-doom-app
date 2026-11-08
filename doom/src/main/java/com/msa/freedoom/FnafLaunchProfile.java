@@ -39,6 +39,12 @@ public final class FnafLaunchProfile {
                 " +set vid_scale_custompixelaspect 1";
     }
 
+    /** 60 is an upper limit, not a guarantee. Expose the engine's own
+     * unobtrusive FPS/frametime counter; it remains toggleable in-game. */
+    public static String frameRateArgs() {
+        return " +set vid_maxfps 60 +set cl_capfps 0 +set vid_fps 1";
+    }
+
     public static String buildArgs(String map, int difficulty, int streamer, int graphics,
                                    int shaders, int halloween, int christmas, int height,
                                    boolean outsideBlack) {
@@ -67,11 +73,15 @@ public final class FnafLaunchProfile {
                 // precaching and all gameplay simulation untouched.
                 " +set gl_precache 0" +
                 " +set fnaf_iqm_cull 1" +
+                // Conservative OBJ/MD3 main-view rejection; no actor or
+                // animation simulation is skipped. Portals/cameras fail open.
+                " +set fnaf_static_cull 1" +
                 // Black only known exterior views in NIGHT1..5; render-only.
                 " +set fnaf_outside_black " + (outsideBlack ? 1 : 0) +
-                // Only the lowest profile caps ordinary world/character images;
-                // camera canvases, fonts and original menus are excluded.
-                " +set fnaf_max_image_size " + (graphics == 0 ? 1024 : 0) +
+                // A slightly smaller cap for the lowest 480p profile saves
+                // texture upload/memory; 720p keeps its previous 1024px cap.
+                // Camera canvases, fonts and original menus are excluded.
+                " +set fnaf_max_image_size " + (graphics == 0 ? (height == 480 ? 768 : 1024) : 0) +
                 " +set gl_texture_filter " + tex[graphics] +
                 " +set gl_light_shadowmap " + (graphics == 0 ? 0 : 1) +
                 " +set gl_shadowmap_quality " + shadowMap[graphics] +

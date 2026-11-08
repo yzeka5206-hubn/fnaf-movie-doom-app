@@ -1,0 +1,240 @@
+diff --git a/doom/src/main/jni/engine/gzdoom/src/common/models/model_md3.h b/doom/src/main/jni/engine/gzdoom/src/common/models/model_md3.h
+index c301267..50c6048 100644
+--- a/doom/src/main/jni/engine/gzdoom/src/common/models/model_md3.h
++++ b/doom/src/main/jni/engine/gzdoom/src/common/models/model_md3.h
+@@ -17,6 +17,7 @@
+ 
+ #pragma once
+ #include "model.h"
++#include "fnaf_iqm_cull.h"
+ 
+ #define MD3_MAGIC			0x33504449
+ 
+@@ -76,6 +77,8 @@ class FMD3Model : public FModel
+ 	int numTags;
+ 	int mLumpNum;
+ 
++	FnafIqmCull::Box fnafStaticBounds;
++	bool fnafStaticBoundsValid = false;
+ 	TArray<MD3Frame> Frames;
+ 	TArray<MD3Surface> Surfaces;
+ 
+diff --git a/doom/src/main/jni/engine/gzdoom/src/common/models/model_obj.h b/doom/src/main/jni/engine/gzdoom/src/common/models/model_obj.h
+index 26a0552..bf86e79 100644
+--- a/doom/src/main/jni/engine/gzdoom/src/common/models/model_obj.h
++++ b/doom/src/main/jni/engine/gzdoom/src/common/models/model_obj.h
+@@ -19,6 +19,7 @@
+ #define __GL_MODELS_OBJ_H__
+ 
+ #include "model.h"
++#include "fnaf_iqm_cull.h"
+ #include "sc_man.h"
+ #include "tarray.h"
+ #include "vectors.h"
+@@ -69,6 +70,8 @@ private:
+ 		OBJSurface(FTextureID skin): numTris(0), numFaces(0), vbStart(0), faceStart(0), tris(nullptr), skin(skin) {}
+ 	};
+ 
++	FnafIqmCull::Box fnafStaticBounds;
++	bool fnafStaticBoundsValid = false;
+ 	TArray<FVector3> verts;
+ 	TArray<FVector3> norms;
+ 	TArray<FVector2> uvs;
+diff --git a/doom/src/main/jni/engine/gzdoom/src/common/models/modelrenderer.h b/doom/src/main/jni/engine/gzdoom/src/common/models/modelrenderer.h
+index b813d02..8e6606d 100644
+--- a/doom/src/main/jni/engine/gzdoom/src/common/models/modelrenderer.h
++++ b/doom/src/main/jni/engine/gzdoom/src/common/models/modelrenderer.h
+@@ -19,6 +19,7 @@
+ #include "renderstyle.h"
+ #include "matrix.h"
+ #include "model.h"
++#include "fnaf_iqm_cull.h"
+ 
+ class FModelRenderer
+ {
+@@ -37,6 +38,9 @@ public:
+ 	virtual void BeginDrawHUDModel(FRenderStyle style, const VSMatrix &objectToWorldMatrix, bool mirrored, int smf_flags) = 0;
+ 	virtual void EndDrawHUDModel(FRenderStyle style, int smf_flags) = 0;
+ 
++	// Software/other renderers retain original behavior. GLES hardware may
++	// opt in for conservative main-view OBJ/MD3 draw-only rejection.
++	virtual bool ShouldCullStatic(const FnafIqmCull::Box&) { return false; }
+ 	virtual void SetInterpolation(double interpolation) = 0;
+ 	virtual void SetMaterial(FGameTexture *skin, bool clampNoFilter, FTranslationID translation) = 0;
+ 	virtual void DrawArrays(int start, int count) = 0;
+diff --git a/doom/src/main/jni/engine/gzdoom/src/common/models/models_md3.cpp b/doom/src/main/jni/engine/gzdoom/src/common/models/models_md3.cpp
+index 04b5356..0333095 100644
+--- a/doom/src/main/jni/engine/gzdoom/src/common/models/models_md3.cpp
++++ b/doom/src/main/jni/engine/gzdoom/src/common/models/models_md3.cpp
+@@ -184,6 +184,9 @@ bool FMD3Model::Load(const char * path, int lumpnum, const char * buffer, int le
+ 
+ void FMD3Model::LoadGeometry()
+ {
++	fnafStaticBounds = {};
++	bool fnafBoundsOK = true;
++	fnafStaticBoundsValid = false;
+ 	auto lumpdata = fileSystem.ReadFile(mLumpNum);
+ 	auto buffer = lumpdata.string();
+ 	md3_header_t * hdr = (md3_header_t *)buffer;
+@@ -224,9 +227,14 @@ void FMD3Model::LoadGeometry()
+ 			s->Vertices[ii].x = LittleShort(vt[ii].x) / 64.f;
+ 			s->Vertices[ii].y = LittleShort(vt[ii].y) / 64.f;
+ 			s->Vertices[ii].z = LittleShort(vt[ii].z) / 64.f;
++			// Match the x,z,y order uploaded in BuildVertexBuffer. Store a
++			// union of every vertex of every frame and every surface.
++			if (!fnafStaticBounds.Add(s->Vertices[ii].x, s->Vertices[ii].z, s->Vertices[ii].y))
++				fnafBoundsOK = false;
+ 			UnpackVector(LittleShort(vt[ii].n), s->Vertices[ii].nx, s->Vertices[ii].ny, s->Vertices[ii].nz);
+ 		}
+ 	}
++	fnafStaticBoundsValid = fnafBoundsOK && fnafStaticBounds.used;
+ }
+ 
+ //===========================================================================
+@@ -344,6 +352,12 @@ void FMD3Model::RenderFrame(FModelRenderer *renderer, FGameTexture * skin, int f
+ {
+ 	if ((unsigned)frameno >= Frames.Size() || (unsigned)frameno2 >= Frames.Size()) return;
+ 
++	// The box covers every source frame. Linear interpolation within [0,1]
++	// stays inside the box; unsupported extrapolation must always draw.
++	if (fnafStaticBoundsValid && std::isfinite(inter) &&
++		(frameno == frameno2 || (inter >= 0.0 && inter <= 1.0)) &&
++		renderer->ShouldCullStatic(fnafStaticBounds)) return;
++
+ 	renderer->SetInterpolation(inter);
+ 	for (unsigned i = 0; i < Surfaces.Size(); i++)
+ 	{
+diff --git a/doom/src/main/jni/engine/gzdoom/src/common/models/models_obj.cpp b/doom/src/main/jni/engine/gzdoom/src/common/models/models_obj.cpp
+index 32e6dd3..4743103 100644
+--- a/doom/src/main/jni/engine/gzdoom/src/common/models/models_obj.cpp
++++ b/doom/src/main/jni/engine/gzdoom/src/common/models/models_obj.cpp
+@@ -220,6 +220,21 @@ bool FOBJModel::Load(const char* fn, int lumpnum, const char* buffer, int length
+ 	delete curSurface;
+ 	hasSurfaces = surfaces.Size() > 1;
+ 
++	// OBJ vertices are static. Include every parsed vertex (even unused ones)
++	// with the same axis conversion as BuildVertexBuffer; invalid data fails
++	// open instead of rejecting a model whose true bounds are unknown.
++	fnafStaticBounds = {};
++	fnafStaticBoundsValid = verts.Size() > 0;
++	for (const auto &vertex : verts)
++	{
++		auto aligned = RealignVector(vertex);
++		if (!fnafStaticBounds.Add(aligned.X, aligned.Y, aligned.Z))
++		{
++			fnafStaticBoundsValid = false;
++			break;
++		}
++	}
++	fnafStaticBoundsValid &= fnafStaticBounds.used;
+ 
+ 	if (uvs.Size() == 0)
+ 	{ // Needed so that OBJs without UVs can work
+@@ -631,6 +646,10 @@ void FOBJModel::RenderFrame(FModelRenderer *renderer, FGameTexture * skin, int f
+ 	// Prevent the model from rendering if the frame number is < 0
+ 	if (frameno < 0 || frameno2 < 0) return;
+ 
++	// This tests the active main-view transform only; cameras/portals/HUD
++	// always use the engine's original rendering. Simulation is untouched.
++	if (fnafStaticBoundsValid && renderer->ShouldCullStatic(fnafStaticBounds)) return;
++
+ 	for (unsigned int i = 0; i < surfaces.Size(); i++)
+ 	{
+ 		OBJSurface *surf = &surfaces[i];
+diff --git a/doom/src/main/jni/engine/gzdoom/src/rendering/hwrenderer/hw_models.cpp b/doom/src/main/jni/engine/gzdoom/src/rendering/hwrenderer/hw_models.cpp
+index cd1026f..67eb048 100644
+--- a/doom/src/main/jni/engine/gzdoom/src/rendering/hwrenderer/hw_models.cpp
++++ b/doom/src/main/jni/engine/gzdoom/src/rendering/hwrenderer/hw_models.cpp
+@@ -33,6 +33,7 @@
+ #include "hw_bonebuffer.h"
+ #include "hw_models.h"
+ #include "model_iqm.h"
++#include "fnaf_static_cull.h"
+ #include "c_dispatch.h"
+ #include <cstdint>
+ 
+@@ -40,6 +41,14 @@
+ // and HUD weapon models bypass the extra test entirely.
+ extern bool fnaf_cull_main_scene;
+ CVAR(Bool, fnaf_iqm_cull, false, 0)
++CVAR(Bool, fnaf_static_cull, false, 0)
++static uint64_t fnaf_static_tested = 0, fnaf_static_rejected = 0;
++CCMD(fnaf_static_cull_stats)
++{
++	Printf("FNAF_STATIC_CULL_STATS tested=%llu rejected=%llu\n",
++		static_cast<unsigned long long>(fnaf_static_tested),
++		static_cast<unsigned long long>(fnaf_static_rejected));
++}
+ static uint64_t fnaf_cull_tested = 0, fnaf_cull_rejected = 0;
+ CCMD(fnaf_cull_stats)
+ {
+@@ -121,6 +130,22 @@ IModelVertexBuffer *FHWModelRenderer::CreateVertexBuffer(bool needindex, bool si
+ 	return new FModelVertexBuffer(needindex, singleframe);
+ }
+ 
++bool FHWModelRenderer::ShouldCullStatic(const FnafIqmCull::Box& bounds)
++{
++	// The renderer sets this only for a non-orthographic, non-portal main
++	// scene, and clears it for HUD models. Camera and mirror passes fail open.
++	if (!fnaf_static_cull || !fnafCullWorld || !di || !bounds.used) return false;
++	VSMatrix pvm = di->VPUniforms.mProjectionMatrix;
++	pvm.multMatrix(di->VPUniforms.mViewMatrix);
++	pvm.multMatrix(state.mModelMatrix);
++	double matrix[16];
++	for (int i = 0; i < 16; ++i) matrix[i] = pvm.get()[i];
++	++fnaf_static_tested;
++	const bool outside = FnafStaticCull::Outside(matrix, bounds);
++	if (outside) ++fnaf_static_rejected;
++	return outside;
++}
++
+ void FHWModelRenderer::SetInterpolation(double inter)
+ {
+ 	fnafInterpolation = inter;
+diff --git a/doom/src/main/jni/engine/gzdoom/src/rendering/hwrenderer/hw_models.h b/doom/src/main/jni/engine/gzdoom/src/rendering/hwrenderer/hw_models.h
+index d8c2af0..23cae89 100644
+--- a/doom/src/main/jni/engine/gzdoom/src/rendering/hwrenderer/hw_models.h
++++ b/doom/src/main/jni/engine/gzdoom/src/rendering/hwrenderer/hw_models.h
+@@ -51,6 +51,7 @@ public:
+ 	VSMatrix GetViewToWorldMatrix() override;
+ 	void BeginDrawHUDModel(FRenderStyle style, const VSMatrix &objectToWorldMatrix, bool mirrored, int smf_flags) override;
+ 	void EndDrawHUDModel(FRenderStyle style, int smf_flags) override;
++	bool ShouldCullStatic(const FnafIqmCull::Box& bounds) override;
+ 	void SetInterpolation(double interpolation) override;
+ 	void SetMaterial(FGameTexture *skin, bool clampNoFilter, FTranslationID translation) override;
+ 	void DrawArrays(int start, int count) override;
+diff --git a/doom/src/main/jni/engine/gzdoom/src/common/models/fnaf_static_cull.h b/doom/src/main/jni/engine/gzdoom/src/common/models/fnaf_static_cull.h
+new file mode 100644
+index 0000000..ff33cfd
+--- /dev/null
++++ b/doom/src/main/jni/engine/gzdoom/src/common/models/fnaf_static_cull.h
+@@ -0,0 +1,29 @@
++// Conservative screen-frustum rejection for OBJ and all MD3 animation frames.
++// Only render work is skipped; a failed or ambiguous test must always draw.
++#pragma once
++#include "fnaf_iqm_cull.h"
++#include <cmath>
++
++namespace FnafStaticCull
++{
++// Matrices are column-major, identical to the GLES vertex shader. All-frame
++// vertex AABBs also enclose the linear interpolation of any two MD3 frames.
++// Ignore near/far clipping: depth clamp and special passes can change those.
++inline bool Outside(const double* projectionViewModel, const FnafIqmCull::Box& box)
++{
++    if (!projectionViewModel || !box.used) return false;
++    for (int i = 0; i < 16; ++i)
++        if (!std::isfinite(projectionViewModel[i])) return false;
++    double planes[4][4];
++    for (int p = 0; p < 4; ++p)
++    {
++        const int row = p / 2;
++        const double sign = (p & 1) ? -1.0 : 1.0;
++        for (int c = 0; c < 4; ++c)
++            planes[p][c] = projectionViewModel[c * 4 + 3] +
++                           sign * projectionViewModel[c * 4 + row];
++    }
++    // Reuse the same generous floating-point margin as the IQM path.
++    return FnafIqmCull::UpdateMask(15, planes, box, nullptr) != 0;
++}
++}

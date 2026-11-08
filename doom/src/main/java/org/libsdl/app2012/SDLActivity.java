@@ -1863,6 +1863,9 @@ class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
     @Override
     public void surfaceCreated(SurfaceHolder holder) {
         Log.v("SDL", "surfaceCreated()");
+        if (SDLActivity.OPENTOUCH_SDL_EXTRA) {
+            com.msa.freedoom.FnafFrameRateHint.request(holder);
+        }
         SDLActivity.onNativeSurfaceCreated();
     }
 

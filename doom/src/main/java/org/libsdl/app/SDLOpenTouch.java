@@ -167,7 +167,7 @@ public class SDLOpenTouch
                     + " +set vid_defwidth " + renderWidth
                     + " +set vid_defheight " + renderHeight
                     + FnafLaunchProfile.renderScaleArgs(renderWidth, renderHeight)
-                    + " +set vid_maxfps 60"
+                    + FnafLaunchProfile.frameRateArgs()
                     + FnafLaunchProfile.buildArgs(selectedMap, difficulty, streamer, graphics,
                             shaders, halloween, christmas, resolution,
                             intent.getBooleanExtra("fnaf_outside_black", false));
@@ -182,7 +182,8 @@ public class SDLOpenTouch
                     + " +set CL_TextureQuality 0 +set CL_ShadowQuality 0"
                     + " +set CL_SSAO 0 +set CL_Bloom 0 +set CL_Lens 0 +set CL_Antialiasing 0"
                     + " +set gl_ssao 0 +set gl_fxaa 0 +set gl_light_shadowmap 0"
-                    + " +set vid_maxfps 60 +set sv_difficulty 1 +map OUTSIDE";
+                    + FnafLaunchProfile.frameRateArgs()
+                    + " +set fnaf_static_cull 1 +set sv_difficulty 1 +map OUTSIDE";
         }
 
         String[] argsArray = Utils.createArgs(args);
