@@ -28,6 +28,22 @@ int main() {
     assert(ShouldRender(s,true,true,false,true,2));     // clock reset fails open
     assert(ShouldRender(s,false,true,false,true,3));    // option off
     assert(ShouldRender(s,true,false,false,true,4));   // menus / other cameras unaffected
+    // Emulate the actual FCanvasTexture use flag across update/main passes.
+    // After a skip, no new sample means the screen disappeared and must not
+    // keep drawing every 200ms. Sampling it again refreshes immediately.
+    State life; bool needed=true, firstUpdate=true; int lifeDraws=0;
+    auto pass = [&](std::uint64_t t) {
+        const bool render=ShouldRender(life,true,true,firstUpdate,needed,t);
+        if (render) { ++lifeDraws; needed=false; firstUpdate=false; }
+        else if (needed) ClearSkippedUse(needed);
+        return render;
+    };
+    assert(pass(1000)); needed=true; // first render; sampled in main view
+    assert(!pass(1016) && !needed); // skip; then main view stops sampling
+    assert(!pass(1032) && !pass(1400) && !pass(2000));
+    assert(lifeDraws==1);           // hidden screen caused no stale redraw
+    needed=true;                    // reappears in a new main/camera view
+    assert(pass(2016) && lifeDraws==2); // immediately, not after the throttle
     State sixty; int updates=0;
     for (unsigned i=0;i<600;++i) updates+=ShouldRender(sixty,true,true,false,true,10000+(i*1000/60));
     assert(updates>=48 && updates<=51); // ~50 in ten seconds, versus 600 input frames

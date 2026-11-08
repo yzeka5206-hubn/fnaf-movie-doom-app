@@ -17,7 +17,10 @@ inline bool IsSecurityScreen(const char* name) {
 }
 // At most 5 updates/s for selected screens, and never on two adjacent render
 // frames. First display, a changed camera and reappearance update immediately.
-// Skipped textures remain marked dirty for a later frame.
+// After a skipped pass, clear its old use marker: rendering the main view
+// marks it again if the screen is still visible. This avoids redrawing a
+// screen that disappeared immediately after a skipped update.
+inline void ClearSkippedUse(bool& needsUpdate) { needsUpdate = false; }
 inline bool ShouldRender(State& state, bool saver, bool isSecurity, bool first,
                          bool currentlyVisible, std::uint64_t now) {
     if (!currentlyVisible) { state.visible = false; return false; }

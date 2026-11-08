@@ -389,10 +389,10 @@ index 31c95b2..ef87483 100644
  		int fnaf_bone_texture_index = -1;
 diff --git a/doom/src/main/jni/engine/gzdoom/src/r_data/fnaf_camera_scheduler.h b/doom/src/main/jni/engine/gzdoom/src/r_data/fnaf_camera_scheduler.h
 new file mode 100644
-index 0000000..89e85c2
+index 0000000..b47b23c
 --- /dev/null
 +++ b/doom/src/main/jni/engine/gzdoom/src/r_data/fnaf_camera_scheduler.h
-@@ -0,0 +1,33 @@
+@@ -0,0 +1,36 @@
 +// Optional security-screen-only render throttling, never a simulation throttle.
 +#pragma once
 +#include <cstdint>
@@ -412,7 +412,10 @@ index 0000000..89e85c2
 +}
 +// At most 5 updates/s for selected screens, and never on two adjacent render
 +// frames. First display, a changed camera and reappearance update immediately.
-+// Skipped textures remain marked dirty for a later frame.
++// After a skipped pass, clear its old use marker: rendering the main view
++// marks it again if the screen is still visible. This avoids redrawing a
++// screen that disappeared immediately after a skipped update.
++inline void ClearSkippedUse(bool& needsUpdate) { needsUpdate = false; }
 +inline bool ShouldRender(State& state, bool saver, bool isSecurity, bool first,
 +                         bool currentlyVisible, std::uint64_t now) {
 +    if (!currentlyVisible) { state.visible = false; return false; }
@@ -427,7 +430,7 @@ index 0000000..89e85c2
 +}
 +}
 diff --git a/doom/src/main/jni/engine/gzdoom/src/r_data/r_canvastexture.cpp b/doom/src/main/jni/engine/gzdoom/src/r_data/r_canvastexture.cpp
-index 28aec2a..391c8be 100644
+index 28aec2a..55b6ef4 100644
 --- a/doom/src/main/jni/engine/gzdoom/src/r_data/r_canvastexture.cpp
 +++ b/doom/src/main/jni/engine/gzdoom/src/r_data/r_canvastexture.cpp
 @@ -28,6 +28,19 @@
@@ -459,7 +462,7 @@ index 28aec2a..391c8be 100644
  	texture->bFirstUpdate = true;
  }
  
-@@ -108,12 +123,19 @@ void SetCameraToTexture(AActor *viewpoint, const FString &texturename, double fo
+@@ -108,11 +123,24 @@ void SetCameraToTexture(AActor *viewpoint, const FString &texturename, double fo
  
  void FCanvasTextureInfo::UpdateAll(std::function<void(AActor *, FCanvasTexture *, double fov)> callback)
  {
@@ -475,11 +478,16 @@ index 28aec2a..391c8be 100644
  		{
  			callback(probe.Viewpoint, probe.Texture, probe.FOV);
 +			if (saver && probe.FnafSecurityScreen) ++fnaf_camera_draws;
++		}
++		else if (visible && saver && probe.FnafSecurityScreen)
++		{
++			++fnaf_camera_skips;
++			// A main/camera pass marks use again when this texture is sampled.
++			// Leaving the old flag set would redraw an off-screen monitor forever.
++			FnafCameraScheduler::ClearSkippedUse(probe.Texture->bNeedsUpdate);
  		}
-+		else if (visible && saver && probe.FnafSecurityScreen) ++fnaf_camera_skips;
  	}
  }
- 
 diff --git a/doom/src/main/jni/engine/gzdoom/src/r_data/r_canvastexture.h b/doom/src/main/jni/engine/gzdoom/src/r_data/r_canvastexture.h
 index f2fb1ff..b8a4e2d 100644
 --- a/doom/src/main/jni/engine/gzdoom/src/r_data/r_canvastexture.h
